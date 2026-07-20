@@ -323,7 +323,12 @@ def receive(data):
 
         current_price,
 
-        data["time"]
+        data["time"],
+
+        data.get(
+            "size",
+            0
+        )
 
     )
 

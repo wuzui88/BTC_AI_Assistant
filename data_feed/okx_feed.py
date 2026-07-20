@@ -3,14 +3,37 @@ import json
 import time
 import threading
 
+from config.instrument import get_contract_size
+
 
 
 class OKXFeed:
 
 
-    def __init__(self, callback):
+    def __init__(
+        self,
+        callback
+    ):
+
+
+        # =========================
+        # 基础配置
+        # =========================
+
+        self.symbol = (
+            "BTC-USDT-SWAP"
+        )
+
+
+        self.contract_size = (
+            get_contract_size(
+                self.symbol
+            )
+        )
+
 
         self.callback = callback
+
 
 
         self.url = (
@@ -18,19 +41,45 @@ class OKXFeed:
         )
 
 
+
         self.ws = None
 
 
-        # 重连控制
 
-        self.reconnect_count = 0
+        # =========================
+        # 状态控制
+        # =========================
 
         self.running = True
 
 
-        # 错误防刷屏
+        self.reconnect_count = 0
+
+
+
+        # 错误防刷
 
         self.last_error_time = 0
+
+
+
+
+        # =========================
+        # 成交量缓存
+        # =========================
+
+        self.volume_cache = 0.0
+
+
+
+        # 成交量线程锁
+
+        self.volume_lock = (
+            threading.Lock()
+        )
+
+
+
 
 
 
@@ -55,6 +104,8 @@ class OKXFeed:
 
 
 
+
+
     def stop(self):
 
 
@@ -63,9 +114,11 @@ class OKXFeed:
 
         if self.ws:
 
+
             try:
 
                 self.ws.close()
+
 
             except:
 
@@ -91,6 +144,7 @@ class OKXFeed:
                 )
 
 
+
                 self.ws = websocket.WebSocketApp(
 
 
@@ -113,14 +167,22 @@ class OKXFeed:
 
 
 
+                print(
+                    "开始运行WebSocket..."
+                )
+
+
+
                 self.ws.run_forever(
 
 
                     ping_interval=15,
 
 
-                    ping_timeout=10
+                    ping_timeout=10,
 
+                    origin="https://www.okx.com"
+                 
 
                 )
 
@@ -140,9 +202,12 @@ class OKXFeed:
 
 
 
+
             if not self.running:
 
                 break
+
+
 
 
 
@@ -178,7 +243,13 @@ class OKXFeed:
 
 
 
-    def on_open(self, ws):
+    def on_open(
+
+        self,
+
+        ws
+
+    ):
 
 
         self.reconnect_count = 0
@@ -193,11 +264,13 @@ class OKXFeed:
 
 
 
-        # =====================
-        # 只订阅实时行情
-        #
-        # K线由本地生成
-        # =====================
+        print(
+
+            "正在订阅OKX频道..."
+
+        )
+
+
 
 
         subscribe = {
@@ -208,7 +281,9 @@ class OKXFeed:
             "subscribe",
 
 
+
             "args": [
+
 
 
                 {
@@ -221,10 +296,28 @@ class OKXFeed:
 
                     "instId":
 
-                    "BTC-USDT-SWAP"
+                    self.symbol
+
+
+                },
+
+
+
+                {
+
+
+                    "channel":
+
+                    "trades",
+
+
+                    "instId":
+
+                    self.symbol
 
 
                 }
+
 
 
             ]
@@ -233,9 +326,20 @@ class OKXFeed:
 
 
 
+
         ws.send(
 
-            json.dumps(subscribe)
+            json.dumps(
+                subscribe
+            )
+
+        )
+
+
+
+        print(
+
+            "OKX订阅发送完成"
 
         )
 
@@ -247,21 +351,47 @@ class OKXFeed:
 
 
 
-    def on_message(self, ws, message):
+    def on_message(
+
+        self,
+
+        ws,
+
+        message
+
+    ):
 
 
         try:
 
 
-            data = json.loads(message)
+
+            data = json.loads(
+                message
+            )
 
 
 
-            # 过滤系统消息
+
+            # =========================
+            # OKX事件消息
+            # =========================
+
+
+            if "event" in data:
+
+                return
+
+
+
+
 
             if "arg" not in data:
 
+
                 return
+
+
 
 
 
@@ -273,19 +403,94 @@ class OKXFeed:
 
 
 
-            if channel != "tickers":
-
-                return
-
-
-
             if "data" not in data:
 
+
                 return
+
 
 
 
             if not data["data"]:
+
+
+                return
+
+
+
+
+
+
+
+            # =========================
+            # trades成交量
+            # =========================
+
+
+            if channel == "trades":
+
+
+
+                for trade in data["data"]:
+
+
+
+                    size = trade.get(
+                        "sz"
+                    )
+
+
+
+                    if size is None:
+
+                        continue
+
+
+
+                    try:
+
+
+                        volume = (
+
+                            float(size)
+
+                            *
+
+                            self.contract_size
+
+                        )
+
+
+
+                        with self.volume_lock:
+
+
+                            self.volume_cache += volume
+
+
+
+                    except:
+
+
+                        pass
+
+
+
+                return
+
+
+
+
+
+
+
+            # =========================
+            # tickers价格
+            # =========================
+
+
+            if channel != "tickers":
+
 
                 return
 
@@ -293,6 +498,7 @@ class OKXFeed:
 
 
             ticker = data["data"][0]
+
 
 
 
@@ -307,6 +513,7 @@ class OKXFeed:
             if last is None:
 
                 return
+
 
 
 
@@ -326,13 +533,42 @@ class OKXFeed:
 
             if price <= 0:
 
+
                 return
 
 
 
 
 
+
+
+            # =========================
+            # 获取成交量
+            # =========================
+
+
+            with self.volume_lock:
+
+
+
+                volume = (
+
+                    self.volume_cache
+
+                )
+
+
+
+                self.volume_cache = 0.0
+
+
+
+
+
+
+
             self.callback({
+
 
 
                 "type":
@@ -349,7 +585,7 @@ class OKXFeed:
 
                 "symbol":
 
-                "BTC-USDT-SWAP",
+                self.symbol,
 
 
 
@@ -359,13 +595,24 @@ class OKXFeed:
 
 
 
+                "size":
+
+                volume,
+
+
+
                 "time":
 
                 int(
 
-                    time.time()*1000
+                    time.time()
+
+                    *
+
+                    1000
 
                 )
+
 
 
             })
@@ -375,7 +622,10 @@ class OKXFeed:
 
 
 
+
+
         except Exception as e:
+
 
 
             self.log_error(
@@ -394,7 +644,15 @@ class OKXFeed:
 
 
 
-    def on_error(self, ws, error):
+    def on_error(
+
+        self,
+
+        ws,
+
+        error
+
+    ):
 
 
         self.log_error(
@@ -451,15 +709,27 @@ class OKXFeed:
     ):
 
 
+
         now = time.time()
 
 
 
-        # 5秒最多一次
+        if (
 
-        if now - self.last_error_time < 5:
+            now -
+
+            self.last_error_time
+
+            <
+
+            5
+
+        ):
+
 
             return
+
+
 
 
 

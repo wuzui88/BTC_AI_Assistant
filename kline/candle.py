@@ -2,50 +2,75 @@ class Candle:
 
 
     def __init__(
-        self,
-        timestamp,
-        price
+            self,
+            timestamp,
+            price,
+            volume=0
     ):
+
 
         self.timestamp = timestamp
 
+
+        # OHLC
         self.open = price
         self.high = price
         self.low = price
         self.close = price
 
-        self.volume = 0
+
+        # 成交量
+        self.volume = float(volume)
 
 
 
     def update(
-        self,
-        price
+            self,
+            price,
+            volume=0
     ):
 
+
+        price = float(price)
+        volume = float(volume)
+
+
+        # 更新收盘价
         self.close = price
 
+
+        # 更新最高价
         if price > self.high:
+
             self.high = price
 
 
+        # 更新最低价
         if price < self.low:
+
             self.low = price
+
+
+        # 累计成交量
+        self.volume += volume
 
 
 
     def to_dict(self):
 
+
         return {
 
-            "time":self.timestamp,
+            "time": self.timestamp,
 
-            "open":self.open,
+            "open": self.open,
 
-            "high":self.high,
+            "high": self.high,
 
-            "low":self.low,
+            "low": self.low,
 
-            "close":self.close
+            "close": self.close,
+
+            "volume": self.volume
 
         }
