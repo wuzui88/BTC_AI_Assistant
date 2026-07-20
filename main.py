@@ -37,7 +37,7 @@ risk_manager = RiskManager(
 
 
 position_manager = PositionManager()
-paper_trader = PaperTrader()
+paper_trader = PaperTrader(position_db)
 history_api = OKXHistory()
 
 

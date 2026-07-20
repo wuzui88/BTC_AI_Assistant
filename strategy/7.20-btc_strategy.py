@@ -1,135 +1,5 @@
 class BTCStrategy:
 
-    # =====================
-    # V10.1 新增：入场评分
-    # =====================
-    def calculate_entry_score(
-            self,
-            direction,
-            indicators,
-            candle_confirm=False
-    ):
-        score = 0
-
-        ema20 = indicators.get("EMA20")
-        ema50 = indicators.get("EMA50")
-        macd = indicators.get("MACD")
-        price = indicators.get("PRICE")
-        vwap = indicators.get("VWAP")
-        volume_ratio = indicators.get("VOLUME_RATIO")
-
-        if direction == "LONG":
-
-            if ema20 and ema50 and ema20 > ema50:
-                score += 20
-
-            if macd is not None and macd > 0:
-                score += 20
-
-            if price and vwap and price > vwap:
-                score += 20
-
-            if volume_ratio is not None and volume_ratio >= 0.8:
-                score += 20
-
-        else:
-
-            if ema20 and ema50 and ema20 < ema50:
-                score += 20
-
-            if macd is not None and macd < 0:
-                score += 20
-
-            if price and vwap and price < vwap:
-                score += 20
-
-            if volume_ratio is not None and volume_ratio >= 0.8:
-                score += 20
-
-        if candle_confirm:
-            score += 20
-
-        return score
-
-
-    # =====================
-    # V10.1 新增：K线确认
-    # =====================
-    def check_candle_confirmation(
-            self,
-            candles,
-            direction
-    ):
-        if not candles or len(candles) < 2:
-            return False
-
-        current = candles[-1]
-        previous = candles[-2]
-
-        current_open = current.get("open")
-        current_close = current.get("close")
-        current_high = current.get("high")
-        current_low = current.get("low")
-
-        prev_open = previous.get("open")
-        prev_close = previous.get("close")
-
-        if None in (
-            current_open,
-            current_close,
-            current_high,
-            current_low,
-            prev_open,
-            prev_close
-        ):
-            return False
-
-        body = abs(current_close-current_open)
-
-        if body == 0:
-            return False
-
-        if direction == "LONG":
-
-            lower_shadow = min(current_open,current_close)-current_low
-
-            bullish_engulf = (
-                current_close > current_open
-                and previous.get("close") < previous.get("open")
-                and current_close >= previous_open
-            )
-
-            return lower_shadow > body * 1.2 or bullish_engulf
-
-        else:
-
-            upper_shadow = current_high-max(current_open,current_close)
-
-            bearish_engulf = (
-                current_close < current_open
-                and previous.get("close") > previous.get("open")
-                and current_close <= previous_open
-            )
-
-            return upper_shadow > body * 1.2 or bearish_engulf
-
-
-    # =====================
-    # V10.1 新增：动态RR
-    # =====================
-    def calculate_dynamic_rr(
-            self,
-            score
-    ):
-        if score >= 80:
-            return 2.5
-
-        if score >= 60:
-            return 1.8
-
-        return 1.5
-
-
 
     def generate(
         self,
@@ -646,7 +516,7 @@ class BTCStrategy:
 
 
 
-            if confidence >= 65:
+            if confidence >= 75:
 
 
                 result.update({
@@ -667,7 +537,7 @@ class BTCStrategy:
                         round(price + atr * 3.2,2),
 
                     "risk_reward":
-                        self.calculate_dynamic_rr(confidence),
+                        1.8,
 
                     "confidence":
                         confidence,
@@ -750,7 +620,7 @@ class BTCStrategy:
 
 
 
-            if confidence >= 65:
+            if confidence >= 75:
 
 
                 result.update({
@@ -771,7 +641,7 @@ class BTCStrategy:
                         round(price - atr * 3.2,2),
 
                     "risk_reward":
-                        self.calculate_dynamic_rr(confidence),
+                        1.8,
 
                     "confidence":
                         confidence,
