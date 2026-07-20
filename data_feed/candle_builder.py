@@ -1,31 +1,39 @@
 import time
 
 
+
 class CandleBuilder:
 
 
     def __init__(self):
 
+
         # 当前正在形成的K线
+
         self.current = None
 
 
         # 5分钟
+
         self.interval = 300000
 
 
 
 
     def update(
-        self,
-        price,
-        timestamp=None
+            self,
+            price,
+            timestamp=None,
+            volume=0
     ):
 
 
         try:
 
             price = float(price)
+
+            volume = float(volume)
+
 
         except:
 
@@ -47,8 +55,6 @@ class CandleBuilder:
 
 
 
-        # 当前5分钟开始时间
-
         candle_time = (
 
             timestamp // self.interval
@@ -69,23 +75,33 @@ class CandleBuilder:
 
 
                 "time":
+
                     candle_time,
 
 
                 "open":
+
                     price,
 
 
                 "high":
+
                     price,
 
 
                 "low":
+
                     price,
 
 
                 "close":
-                    price
+
+                    price,
+
+
+                "volume":
+
+                    volume
 
             }
 
@@ -142,6 +158,12 @@ class CandleBuilder:
 
 
 
+            # 累计成交量
+
+            self.current["volume"] += volume
+
+
+
             return None
 
 
@@ -184,7 +206,12 @@ class CandleBuilder:
 
             "close":
 
-                price
+                price,
+
+
+            "volume":
+
+                volume
 
         }
 
