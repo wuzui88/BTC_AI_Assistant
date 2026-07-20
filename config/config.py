@@ -1,0 +1,5 @@
+# config.py
+
+SYMBOL = "BTCUSDT"
+
+OKX_SYMBOL = "BTC-USDT-SWAP"
