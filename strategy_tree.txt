@@ -1,0 +1,12 @@
+卷 Win7 的文件夹 PATH 列表
+卷序列号为 6C9C-C067
+D:\PROJECTS\BTC_AI_ASSISTANT\STRATEGY
+|   btc_strategy.py
+|   __init__.py
+|   
+\---__pycache__
+        btc_strategy.cpython-311.pyc
+        btc_strategy.cpython-313.pyc
+        __init__.cpython-311.pyc
+        __init__.cpython-313.pyc
+        
