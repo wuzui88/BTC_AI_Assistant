@@ -2,6 +2,7 @@ import sqlite3
 import time
 
 
+
 class PositionDB:
 
 
@@ -10,10 +11,15 @@ class PositionDB:
         db_path="btc_ai.db"
     ):
 
+
         self.conn = sqlite3.connect(
+
             db_path,
+
             timeout=30,
+
             check_same_thread=False
+
         )
 
 
@@ -45,16 +51,27 @@ class PositionDB:
 
 
 
-
-
-
-
     # =================================================
     # 创建数据表
+    #
+    # V10.2
+    #
+    # 优化:
+    #
+    # 1. 保留原positions
+    # 2. 保留原trades
+    # 3. 增加AI信号字段
+    # 4. 增加风控事件表
+    #
     # =================================================
 
 
     def create_table(self):
+
+
+        # =========================
+        # 当前持仓
+        # =========================
 
 
         self.conn.execute("""
@@ -62,21 +79,30 @@ class PositionDB:
 
             id INTEGER PRIMARY KEY AUTOINCREMENT,
 
+
             direction TEXT,
+
 
             side TEXT,
 
+
             entry REAL,
+
 
             exit REAL,
 
+
             stop_loss REAL,
+
 
             take_profit REAL,
 
+
             size_btc REAL,
 
+
             contracts INTEGER,
+
 
             leverage INTEGER,
 
@@ -85,6 +111,7 @@ class PositionDB:
 
 
             open_time INTEGER,
+
 
             close_time INTEGER,
 
@@ -104,12 +131,24 @@ class PositionDB:
             highest_price REAL DEFAULT 0,
 
 
-            lowest_price REAL DEFAULT 0
+            lowest_price REAL DEFAULT 0,
+
+
+            final_stop_loss REAL DEFAULT 0,
+
+
+            trailing_status TEXT DEFAULT 'NONE'
 
         )
         """)
 
 
+
+
+
+        # =========================
+        # 实时状态
+        # =========================
 
 
         self.conn.execute("""
@@ -164,42 +203,171 @@ class PositionDB:
 
 
 
+
+        # =========================
+        # 历史交易
+        #
+        # V10.2升级
+        #
+        # 增加:
+        #
+        # AI决策数据
+        #
+        # 技术指标快照
+        #
+        # =========================
+
+
         self.conn.execute("""
         CREATE TABLE IF NOT EXISTS trades(
+
+
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+
             direction TEXT,
+
+
             entry REAL,
+
+
             exit REAL,
+
+
             size_btc REAL,
+
+
             contracts INTEGER,
+
+
             pnl REAL,
+
+
             reason TEXT,
+
+
             open_time INTEGER,
+
+
             close_time INTEGER,
+
+
             hold_minutes REAL,
+
+
             max_profit REAL DEFAULT 0,
+
+
             max_drawdown REAL DEFAULT 0,
+
+
             highest_price REAL DEFAULT 0,
+
+
             lowest_price REAL DEFAULT 0,
+
+
             final_stop_loss REAL DEFAULT 0,
-            trailing_status TEXT DEFAULT 'NONE'
+
+
+            trailing_status TEXT DEFAULT 'NONE',
+
+
+
+            signal TEXT,
+
+
+            trend TEXT,
+
+
+            market_mode TEXT,
+
+
+            score REAL,
+
+
+            confidence REAL,
+
+
+
+            EMA20 REAL,
+
+
+            EMA50 REAL,
+
+
+            RSI REAL,
+
+
+            MACD REAL,
+
+
+            VWAP REAL,
+
+
+            ATR REAL,
+
+
+            VOLUME_RATIO REAL
+
+
         )
         """)
 
+
+
+
+
+        # =========================
+        # 风控事件
+        #
+        # V10.2新增
+        #
+        # =========================
+
+
+        self.conn.execute("""
+        CREATE TABLE IF NOT EXISTS risk_events(
+
+
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+
+            trade_id INTEGER,
+
+
+            event TEXT,
+
+
+            price REAL,
+
+
+            old_stop REAL,
+
+
+            new_stop REAL,
+
+
+            create_time INTEGER
+
+
+        )
+        """)
+
+
+
+
+
         self.conn.commit()
 
-
-
-
-
-
-
-    # =================================================
+        # =================================================
     # 数据库字段迁移
     #
-    # V10.1.7
+    # V10.2
     #
-    # 修复旧数据库没有新增字段问题
+    # 自动兼容旧 btc_ai.db
+    #
+    # 不删除历史数据
     #
     # =================================================
 
@@ -207,53 +375,68 @@ class PositionDB:
     def migrate_database(self):
 
 
-        # =========================
-        # positions表迁移
-        # =========================
-
         tables = {
 
+
+            # =====================
+            # positions迁移
+            # =====================
+
             "positions": {
+
 
                 "exit":
                     "REAL",
 
+
                 "status":
                     "TEXT DEFAULT 'OPEN'",
+
 
                 "close_time":
                     "INTEGER",
 
+
                 "close_reason":
                     "TEXT",
+
 
                 "pnl":
                     "REAL DEFAULT 0",
 
+
                 "max_profit":
                     "REAL DEFAULT 0",
+
 
                 "max_drawdown":
                     "REAL DEFAULT 0",
 
+
                 "highest_price":
                     "REAL DEFAULT 0",
+
 
                 "lowest_price":
                     "REAL DEFAULT 0",
 
+
                 "final_stop_loss":
                     "REAL DEFAULT 0",
+
 
                 "trailing_status":
                     "TEXT DEFAULT 'NONE'"
 
+
             },
+
 
 
             # =====================
             # position_status迁移
             # =====================
+
 
             "position_status": {
 
@@ -266,9 +449,75 @@ class PositionDB:
                     "REAL DEFAULT 0"
 
 
+            },
+
+
+
+            # =====================
+            # trades历史交易迁移
+            #
+            # V10.2新增
+            #
+            # =====================
+
+
+            "trades": {
+
+
+                "signal":
+                    "TEXT",
+
+
+                "trend":
+                    "TEXT",
+
+
+                "market_mode":
+                    "TEXT",
+
+
+                "score":
+                    "REAL",
+
+
+                "confidence":
+                    "REAL",
+
+
+
+                "EMA20":
+                    "REAL",
+
+
+                "EMA50":
+                    "REAL",
+
+
+                "RSI":
+                    "REAL",
+
+
+                "MACD":
+                    "REAL",
+
+
+                "VWAP":
+                    "REAL",
+
+
+                "ATR":
+                    "REAL",
+
+
+                "VOLUME_RATIO":
+                    "REAL"
+
+
             }
 
+
         }
+
 
 
 
@@ -286,15 +535,19 @@ class PositionDB:
 
             exists = {
 
+
                 row["name"]
 
                 for row in columns
+
 
             }
 
 
 
-            for name, typ in fields.items():
+
+
+            for name, dtype in fields.items():
 
 
                 if name not in exists:
@@ -310,11 +563,15 @@ class PositionDB:
                     self.conn.execute(
 
                         f"""
+
                         ALTER TABLE {table}
-                        ADD COLUMN {name} {typ}
+
+                        ADD COLUMN {name} {dtype}
+
                         """
 
                     )
+
 
 
 
@@ -328,6 +585,9 @@ class PositionDB:
 
     # =================================================
     # 保存持仓
+    #
+    # 保留V10.1.9接口
+    #
     # =================================================
 
 
@@ -337,18 +597,10 @@ class PositionDB:
     ):
 
 
-
         position_id = position.get(
             "id"
         )
 
-
-
-
-
-        # -----------------------------
-        # 已存在仓位 更新
-        # -----------------------------
 
 
         if position_id:
@@ -392,10 +644,17 @@ class PositionDB:
                 highest_price=?,
 
 
-                lowest_price=?
+                lowest_price=?,
+
+
+                final_stop_loss=?,
+
+
+                trailing_status=?
 
 
             WHERE id=?
+
 
             """, (
 
@@ -486,6 +745,23 @@ class PositionDB:
 
 
 
+                position.get(
+                    "final_stop_loss",
+                    position.get(
+                        "stop_loss",
+                        0
+                    )
+                ),
+
+
+
+                position.get(
+                    "trailing_status",
+                    "NONE"
+                ),
+
+
+
                 position_id
 
 
@@ -502,12 +778,9 @@ class PositionDB:
 
 
 
-
-
-
-        # -----------------------------
-        # 查找重复OPEN仓
-        # -----------------------------
+        # =====================
+        # 防止重复OPEN仓
+        # =====================
 
 
         row = self.conn.execute("""
@@ -528,11 +801,9 @@ class PositionDB:
         """, (
 
 
-
             position.get(
                 "direction"
             ),
-
 
 
             position.get(
@@ -542,7 +813,6 @@ class PositionDB:
 
 
         )).fetchone()
-
 
 
 
@@ -560,12 +830,9 @@ class PositionDB:
 
 
 
-
-
-
-        # -----------------------------
+        # =====================
         # 新建持仓
-        # -----------------------------
+        # =====================
 
 
         cursor = self.conn.execute("""
@@ -595,7 +862,6 @@ class PositionDB:
 
             lowest_price
 
-
         )
 
 
@@ -604,11 +870,9 @@ class PositionDB:
         """, (
 
 
-
             position.get(
                 "direction"
             ),
-
 
 
             position.get(
@@ -619,12 +883,10 @@ class PositionDB:
             ),
 
 
-
             position.get(
                 "entry",
                 0
             ),
-
 
 
             position.get(
@@ -633,12 +895,10 @@ class PositionDB:
             ),
 
 
-
             position.get(
                 "take_profit",
                 0
             ),
-
 
 
             position.get(
@@ -647,12 +907,10 @@ class PositionDB:
             ),
 
 
-
             position.get(
                 "contracts",
                 0
             ),
-
 
 
             position.get(
@@ -661,13 +919,10 @@ class PositionDB:
             ),
 
 
-
             "OPEN",
 
 
-
             int(time.time()),
-
 
 
             position.get(
@@ -677,7 +932,6 @@ class PositionDB:
                     0
                 )
             ),
-
 
 
             position.get(
@@ -694,8 +948,6 @@ class PositionDB:
 
 
 
-
-
         self.conn.commit()
 
 
@@ -709,6 +961,7 @@ class PositionDB:
         # =================================================
     # 获取当前OPEN持仓
     # =================================================
+
 
     def get_position(self):
 
@@ -727,7 +980,9 @@ class PositionDB:
         """).fetchone()
 
 
+
         return dict(row) if row else None
+
 
 
 
@@ -737,21 +992,119 @@ class PositionDB:
 
 
 
+
+
+
+
+    # =================================================
+    # 保存风控事件
+    #
+    # V10.2新增
+    #
+    # BREAK_EVEN
+    # ATR_TRAIL
+    # PROFIT_LOCK
+    #
+    # =================================================
+
+
+    def save_risk_event(
+        self,
+        trade_id,
+        event,
+        price,
+        old_stop,
+        new_stop
+    ):
+
+
+        try:
+
+
+            self.conn.execute("""
+            INSERT INTO risk_events(
+
+                trade_id,
+
+                event,
+
+                price,
+
+                old_stop,
+
+                new_stop,
+
+                create_time
+
+            )
+
+            VALUES(?,?,?,?,?,?)
+
+            """, (
+
+
+                trade_id,
+
+
+                event,
+
+
+                price,
+
+
+                old_stop,
+
+
+                new_stop,
+
+
+                int(time.time())
+
+
+            ))
+
+
+
+            self.conn.commit()
+
+
+
+            return True
+
+
+
+        except Exception as e:
+
+
+            print(
+
+                "保存风控事件失败:",
+
+                e
+
+            )
+
+
+            return False
+
+
+
+
+
+
+
     # =================================================
     # 平仓
     #
-    # V10.1.7
+    # V10.2升级
     #
-    # 不删除历史
-    # 更新状态
+    # 增加:
     #
-    # 同步:
-    # max_profit
-    # max_drawdown
-    # highest_price
-    # lowest_price
+    # AI信号记录
+    # 技术指标快照
     #
     # =================================================
+
 
     def close_position(
         self,
@@ -769,9 +1122,11 @@ class PositionDB:
         )
 
 
+
         if not position_id:
 
             return False
+
 
 
 
@@ -793,6 +1148,7 @@ class PositionDB:
 
 
 
+
         highest_price = position.get(
             "highest_price",
             0
@@ -805,6 +1161,16 @@ class PositionDB:
             0
         )
 
+
+
+        now = int(time.time())
+
+
+
+
+        # =====================
+        # 更新当前仓位
+        # =====================
 
 
         self.conn.execute("""
@@ -846,14 +1212,13 @@ class PositionDB:
 
         WHERE id=?
 
-
         """, (
 
 
             exit_price,
 
 
-            int(time.time()),
+            now,
 
 
             reason,
@@ -874,10 +1239,19 @@ class PositionDB:
             lowest_price,
 
 
-            position.get("final_stop_loss", position.get("stop_loss", 0)),
+            position.get(
+                "final_stop_loss",
+                position.get(
+                    "stop_loss",
+                    0
+                )
+            ),
 
 
-            position.get("trailing_status", "NONE"),
+            position.get(
+                "trailing_status",
+                "NONE"
+            ),
 
 
             position_id
@@ -887,60 +1261,283 @@ class PositionDB:
 
 
 
+
+
+        # =====================
+        # 写入交易历史
+        # =====================
+
+
+        signal_data = position.get(
+            "signal_data",
+            {}
+        )
+
+
+
+        indicator_data = position.get(
+            "indicators",
+            {}
+        )
+
+
+
+
         self.conn.execute("""
         INSERT INTO trades(
+
             direction,
+
             entry,
+
             exit,
+
             size_btc,
+
             contracts,
+
             pnl,
+
             reason,
+
             open_time,
+
             close_time,
+
             hold_minutes,
+
             max_profit,
+
             max_drawdown,
+
             highest_price,
+
             lowest_price,
+
             final_stop_loss,
-            trailing_status
-        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+
+            trailing_status,
+
+
+            signal,
+
+            trend,
+
+            market_mode,
+
+            score,
+
+            confidence,
+
+
+            EMA20,
+
+            EMA50,
+
+            RSI,
+
+            MACD,
+
+            VWAP,
+
+            ATR,
+
+            VOLUME_RATIO
+
+
+        )
+
+
+        VALUES(
+
+            ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
+
+        )
+
+
         """, (
-            position.get("direction", "NONE"),
-            position.get("entry", 0),
+
+
+            position.get(
+                "direction",
+                "NONE"
+            ),
+
+
+            position.get(
+                "entry",
+                0
+            ),
+
+
             exit_price,
-            position.get("size_btc", 0),
-            position.get("contracts", 0),
+
+
+            position.get(
+                "size_btc",
+                0
+            ),
+
+
+            position.get(
+                "contracts",
+                0
+            ),
+
+
             pnl,
+
+
             reason,
-            position.get("open_time", 0),
-            int(time.time()),
-            round((int(time.time())-position.get("open_time", int(time.time())))/60,1),
+
+
+            position.get(
+                "open_time",
+                0
+            ),
+
+
+            now,
+
+
+            round(
+
+                (
+
+                    now -
+
+                    position.get(
+                        "open_time",
+                        now
+                    )
+
+                ) / 60,
+
+                1
+
+            ),
+
+
             max_profit,
+
+
             max_drawdown,
+
+
             highest_price,
+
+
             lowest_price,
-            position.get("final_stop_loss", position.get("stop_loss",0)),
-            position.get("trailing_status", "NONE")
+
+
+            position.get(
+                "final_stop_loss",
+                position.get(
+                    "stop_loss",
+                    0
+                )
+            ),
+
+
+            position.get(
+                "trailing_status",
+                "NONE"
+            ),
+
+
+
+
+            signal_data.get(
+                "signal",
+                ""
+            ),
+
+
+            signal_data.get(
+                "trend",
+                ""
+            ),
+
+
+            signal_data.get(
+                "market_mode",
+                ""
+            ),
+
+
+            signal_data.get(
+                "score",
+                0
+            ),
+
+
+            signal_data.get(
+                "confidence",
+                0
+            ),
+
+
+
+
+            indicator_data.get(
+                "EMA20",
+                0
+            ),
+
+
+            indicator_data.get(
+                "EMA50",
+                0
+            ),
+
+
+            indicator_data.get(
+                "RSI",
+                0
+            ),
+
+
+            indicator_data.get(
+                "MACD",
+                0
+            ),
+
+
+            indicator_data.get(
+                "VWAP",
+                0
+            ),
+
+
+            indicator_data.get(
+                "ATR",
+                0
+            ),
+
+
+            indicator_data.get(
+                "VOLUME_RATIO",
+                0
+            )
+
+
         ))
+
 
 
         self.conn.commit()
 
 
+
         return True
 
-
-
-
-
-    # =================================================
+        # =================================================
     # 兼容旧代码
     #
     # 原DELETE逻辑
     #
-    # V10.1.7
+    # V10.2
+    #
     # 改为关闭历史
     #
     # =================================================
@@ -963,8 +1560,11 @@ class PositionDB:
 
 
                 position.get(
+
                     "entry",
+
                     0
+
                 ),
 
 
@@ -972,20 +1572,29 @@ class PositionDB:
 
 
                 position.get(
+
                     "pnl",
+
                     0
+
                 ),
 
 
                 position.get(
+
                     "max_profit",
+
                     0
+
                 ),
 
 
                 position.get(
+
                     "max_drawdown",
+
                     0
+
                 )
 
 
@@ -998,8 +1607,11 @@ class PositionDB:
 
 
 
+
+
     # =================================================
     # 历史持仓
+    #
     # =================================================
 
 
@@ -1038,8 +1650,57 @@ class PositionDB:
 
 
 
+
+
+
+    # =================================================
+    # 历史交易查询
+    #
+    # V10.2新增
+    #
+    # =================================================
+
+
+    def get_trade_history(
+        self,
+        limit=100
+    ):
+
+
+        rows = self.conn.execute("""
+        SELECT *
+
+        FROM trades
+
+        ORDER BY id DESC
+
+        LIMIT ?
+
+        """, (
+
+            limit,
+
+        )).fetchall()
+
+
+
+        return [
+
+            dict(row)
+
+            for row in rows
+
+        ]
+
+
+
+
+
+
+
     # =================================================
     # Dashboard当前持仓
+    #
     # =================================================
 
 
@@ -1057,50 +1718,62 @@ class PositionDB:
 
 
                 "position":
+
                     "NONE",
 
 
                 "direction":
+
                     "NONE",
 
 
                 "entry":
+
                     0,
 
 
                 "current":
+
                     0,
 
 
                 "pnl":
+
                     0,
 
 
                 "size_btc":
+
                     0,
 
 
                 "stop_loss":
+
                     0,
 
 
                 "take_profit":
+
                     0,
 
 
                 "max_profit":
+
                     0,
 
 
                 "max_drawdown":
+
                     0,
 
 
                 "highest_price":
+
                     0,
 
 
                 "lowest_price":
+
                     0
 
 
@@ -1219,17 +1892,18 @@ class PositionDB:
 
         }
 
-        # =================================================
+
+
+
+
+
+
+    # =================================================
     # 实时持仓状态
     #
-    # V10.1.7
+    # V10.2
     #
-    # 增加:
-    #
-    # highest_price
-    # lowest_price
-    #
-    # 防止数据库异常影响行情循环
+    # 增加异常保护
     #
     # =================================================
 
@@ -1258,6 +1932,7 @@ class PositionDB:
 
 
             return
+
 
 
 
@@ -1396,21 +2071,41 @@ class PositionDB:
 
 
             ))
-            # 每小时清理一次
+
+
+
+
+
+            # =========================
+            # 清理历史状态
+            # 保留最近10000条
+            # =========================
+
 
             if int(time.time()) % 3600 < 5:
 
+
                 self.conn.execute("""
                 DELETE FROM position_status
+
                 WHERE id NOT IN (
+
                     SELECT id
+
                     FROM position_status
+
                     ORDER BY id DESC
+
                     LIMIT 10000
+
                 )
+
                 """)
 
-        
+
+
+
+
             self.conn.commit()
 
 
@@ -1432,8 +2127,86 @@ class PositionDB:
 
 
 
+
+
+    # =================================================
+    # 查询风险事件
+    #
+    # V10.2新增
+    #
+    # =================================================
+
+
+    def get_risk_events(
+        self,
+        trade_id=None,
+        limit=100
+    ):
+
+
+        if trade_id:
+
+
+            rows = self.conn.execute("""
+            SELECT *
+
+            FROM risk_events
+
+            WHERE trade_id=?
+
+            ORDER BY id DESC
+
+            LIMIT ?
+
+            """, (
+
+                trade_id,
+
+                limit
+
+            )).fetchall()
+
+
+
+        else:
+
+
+            rows = self.conn.execute("""
+            SELECT *
+
+            FROM risk_events
+
+            ORDER BY id DESC
+
+            LIMIT ?
+
+            """, (
+
+                limit,
+
+            )).fetchall()
+
+
+
+
+
+        return [
+
+            dict(row)
+
+            for row in rows
+
+        ]
+
+
+
+
+
+
+
     # =================================================
     # 关闭数据库
+    #
     # =================================================
 
 
@@ -1442,10 +2215,13 @@ class PositionDB:
 
         try:
 
+
             self.conn.close()
+
 
 
         except Exception:
 
 
             pass
+

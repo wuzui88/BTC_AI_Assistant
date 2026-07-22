@@ -1,1097 +1,2170 @@
+# ============================================================
+# btc_strategy_v10.2.2.py
+#
+# BTC AI Assistant V10.2.2
+#
+# Strategy Engine
+#
+# Upgrade:
+#
+# V10.2.2
+#
+# 1. 优化成交量过滤
+# 2. 增加趋势评分系统
+# 3. 优化 bearish_rebound 空头逻辑
+# 4. 增加最小风险收益过滤
+# 5. 修复策略层和执行层止损冲突
+# 6. 强化BTC 5分钟永续适配
+# 7. 保留V10.2接口兼容
+#
+# ============================================================
+
+
+from config.strategy_config import STRATEGY_CONFIG
+
+
+
+
+
 class BTCStrategy:
+
+
+
+    def __init__(
+        self
+    ):
+
+
+        self.name = "BTCStrategy_V10.2.2"
+
+
+
+
+
+    # ============================================================
+    # 兼容旧调用接口
+    #
+    # 支持:
+    #
+    # generate(
+    #     market,
+    #     indicators
+    # )
+    #
+    # 老版本:
+    #
+    # generate(
+    #     price,
+    #     indicators,
+    #     market
+    # )
+    #
+    # ============================================================
+
 
     def generate(
         self,
-        price,
+        market,
         indicators,
-        market_analysis
+        *args,
+        **kwargs
     ):
 
-        result = {
-            "direction": "NONE",
-            "action": "WAIT",
-            "entry": None,
-            "stop_loss": None,
-            "take_profit": None,
-            "risk_reward": None,
-            "confidence": 0,
-            "reason": []
+
+
+        if isinstance(
+            market,
+            (
+                int,
+                float
+            )
+        ):
+
+
+
+            price = market
+
+
+
+            if len(args) > 0 and isinstance(
+                args[0],
+                dict
+            ):
+
+
+                market = args[0]
+
+
+
+            else:
+
+
+                market = {
+
+
+                    "trend":
+
+                        "neutral",
+
+
+                    "score":
+
+                        0,
+
+
+                    "confidence":
+
+                        0
+
+                }
+
+
+
+
+            if isinstance(
+                indicators,
+                dict
+            ):
+
+
+                indicators["price"] = price
+
+
+
+
+
+
+        return self.generate_signal(
+
+            market,
+
+            indicators
+
+        )
+
+
+
+
+
+
+
+    # ============================================================
+    # 核心信号生成
+    #
+    # V10.2.2
+    #
+    # ============================================================
+
+
+    def generate_signal(
+        self,
+        market,
+        indicators
+    ):
+
+
+
+        signal = {
+
+
+            "direction":
+
+                "NONE",
+
+
+            "action":
+
+                "WAIT",
+
+
+            "entry":
+
+                None,
+
+
+            "stop_loss":
+
+                None,
+
+
+            "take_profit":
+
+                None,
+
+
+            "risk_reward":
+
+                None,
+
+
+            "confidence":
+
+                0,
+
+
+            "score":
+
+                0,
+
+
+            "reason":
+
+                [],
+
+
+
+            "market_data":
+
+                {},
+
+
+
+            "indicators":
+
+                {}
+
         }
 
 
-        # =====================
-        # 数据保护
-        # =====================
 
-        if price is None:
-            return result
+
+
+
+        if market is None:
+
+
+            signal["reason"].append(
+
+                "市场数据为空"
+
+            )
+
+
+            return signal
+
+
+
+
 
 
         if indicators is None:
-            indicators = {}
 
 
-        if market_analysis is None:
-            return result
+            signal["reason"].append(
+
+                "指标数据为空"
+
+            )
+
+
+            return signal
 
 
 
-        signal = market_analysis.get(
-            "signal",
-            "WAIT"
-        )
 
-        trend = market_analysis.get(
+
+
+        # 保存上下文
+
+        signal["market_data"] = market.copy()
+
+
+        signal["indicators"] = indicators.copy()
+
+
+
+
+
+
+
+        trend = market.get(
+
             "trend",
+
             "neutral"
+
         )
 
-        score = market_analysis.get(
+
+
+        market_score = market.get(
+
             "score",
+
             0
-        )
 
-        market_mode = market_analysis.get(
-            "market_mode",
-            "TREND"
         )
 
 
 
-        ema20 = indicators.get("EMA20")
+        confidence = market.get(
 
-        ema50 = indicators.get("EMA50")
+            "confidence",
 
-        rsi = indicators.get("RSI")
+            0
 
-        macd = indicators.get("MACD")
+        )
 
-        atr = indicators.get("ATR")
 
-        vwap = indicators.get("VWAP")
+
+        price = indicators.get(
+
+            "price"
+
+        )
+
+
+
+        atr = indicators.get(
+
+            "ATR"
+
+        )
+
+
+
+
+
+
+        if price is None or atr is None:
+
+
+            signal["reason"].append(
+
+                "缺少价格或ATR"
+
+            )
+
+
+            return signal
+
+
+
+
+
+
+
+
+        # =====================================================
+        # 计算交易评分
+        #
+        # 不再完全依赖market score
+        #
+        # =====================================================
+
+
+        trade_score = self.calculate_trade_score(
+
+            trend,
+
+            market_score,
+
+            confidence,
+
+            indicators
+
+        )
+
+
+
+        signal["score"] = trade_score
+
+
+
+
+
+
+
+
+        # =====================================================
+        # LONG
+        # =====================================================
+
+
+        if trend in [
+            "bullish",
+            "bullish_pullback"
+        ]:
+
+
+
+            if trade_score < STRATEGY_CONFIG.get(
+
+                "ENTRY_SCORE",
+
+                70
+
+            ):
+
+
+
+                signal["reason"].append(
+
+                    "多头评分不足"
+
+                )
+
+
+                return signal
+
+
+
+
+
+
+
+            check = self.check_entry_filter(
+
+                "LONG",
+
+                market,
+
+                indicators
+
+            )
+
+
+
+            if not check["allow"]:
+
+
+                signal["reason"].extend(
+
+                    check["reason"]
+
+                )
+
+
+                return signal
+
+
+
+
+
+
+
+            signal["direction"] = "LONG"
+
+
+            signal["action"] = "ENTER"
+
+
+
+            signal["entry"] = price
+
+
+
+            signal["stop_loss"] = self.calculate_stop_loss(
+
+                "LONG",
+
+                price,
+
+                atr
+
+            )
+
+
+
+            signal["take_profit"] = self.calculate_take_profit(
+
+                "LONG",
+
+                price,
+
+                atr
+
+            )
+
+
+
+            signal["risk_reward"] = self.calculate_risk_reward(
+
+                price,
+
+                signal["stop_loss"],
+
+                signal["take_profit"]
+
+            )
+
+
+
+            signal["confidence"] = confidence
+
+
+
+            signal["reason"].append(
+
+                "多头趋势确认"
+
+            )
+
+
+
+            return signal
+
+        # =====================================================
+# SHORT判断
+# =====================================================
+
+
+        if trend in [
+
+            "bearish",
+
+            "bearish_rebound"
+
+        ]:
+
+
+
+            if trade_score > -STRATEGY_CONFIG.get(
+
+                "ENTRY_SCORE",
+
+                70
+
+            ):
+
+
+
+                signal["reason"].append(
+
+                    "空头评分不足"
+
+                )
+
+
+                return signal
+
+
+
+
+
+
+
+
+            check = self.check_entry_filter(
+
+                "SHORT",
+
+                market,
+
+                indicators
+
+            )
+
+
+
+            if not check["allow"]:
+
+
+                signal["reason"].extend(
+
+                    check["reason"]
+
+                )
+
+
+                return signal
+
+
+
+
+
+
+
+
+            signal["direction"] = "SHORT"
+
+
+            signal["action"] = "ENTER"
+
+
+
+            signal["entry"] = price
+
+
+
+            signal["stop_loss"] = self.calculate_stop_loss(
+
+                "SHORT",
+
+                price,
+
+                atr
+
+            )
+
+
+
+            signal["take_profit"] = self.calculate_take_profit(
+
+                "SHORT",
+
+                price,
+
+                atr
+
+            )
+
+
+
+            signal["risk_reward"] = self.calculate_risk_reward(
+
+                price,
+
+                signal["stop_loss"],
+
+                signal["take_profit"]
+
+            )
+
+
+
+            signal["confidence"] = confidence
+
+
+
+            signal["reason"].append(
+
+                "空头趋势确认"
+
+            )
+
+
+            return signal
+
+
+
+
+
+
+
+        signal["reason"].append(
+
+            "等待确认"
+
+        )
+
+
+        return signal
+
+
+
+
+
+
+
+
+    # ============================================================
+    # 交易评分系统
+    #
+    # V10.2.2
+    #
+    # 综合:
+    #
+    # 趋势
+    # EMA
+    # MACD
+    # VWAP
+    # RSI
+    # 成交量
+    #
+    # ============================================================
+
+
+    def calculate_trade_score(
+        self,
+        trend,
+        market_score,
+        confidence,
+        indicators
+    ):
+
+
+
+        score = 0
+
+
+
+        ema20 = indicators.get(
+
+            "EMA20",
+
+            0
+
+        )
+
+
+        ema50 = indicators.get(
+
+            "EMA50",
+
+            0
+
+        )
+
+
+        macd = indicators.get(
+
+            "MACD",
+
+            0
+
+        )
+
+
+        price = indicators.get(
+
+            "price",
+
+            0
+
+        )
+
+
+        vwap = indicators.get(
+
+            "VWAP",
+
+            0
+
+        )
+
+
+        rsi = indicators.get(
+
+            "RSI",
+
+            50
+
+        )
+
+
+        volume = indicators.get(
+
+            "VOLUME_RATIO",
+
+            0
+
+        )
+
+
+
+
+
+
+        # ====================================================
+        # 趋势方向
+        # ====================================================
+
+
+        if trend in [
+            "bullish",
+            "bullish_pullback"
+        ]:
+
+
+            score += 30
+
+
+
+        elif trend in [
+
+            "bearish",
+
+            "bearish_rebound"
+
+        ]:
+
+
+            score -= 30
+
+
+
+
+
+
+
+        # ====================================================
+        # EMA趋势
+        # ====================================================
+
+
+        if ema20 and ema50:
+
+
+
+            if ema20 > ema50:
+
+
+                score += 20
+
+
+
+            elif ema20 < ema50:
+
+
+                score -= 20
+
+
+
+
+
+
+
+        # ====================================================
+        # MACD
+        # ====================================================
+
+
+        if macd > 0:
+
+
+            score += 15
+
+
+
+        elif macd < 0:
+
+
+            score -= 15
+
+
+
+
+
+
+
+        # ====================================================
+        # VWAP
+        # ====================================================
+
+
+        if vwap and price:
+
+
+
+            if price > vwap:
+
+
+                score += 10
+
+
+
+            else:
+
+
+                score -= 10
+
+
+
+
+
+
+
+        # ====================================================
+        # RSI
+        # ====================================================
+
+
+        if 40 <= rsi <= 65:
+
+
+            score += 10
+
+
+
+        elif rsi > 75:
+
+
+            score -= 10
+
+
+
+        elif rsi < 25:
+
+
+            score -= 10
+
+
+
+
+
+
+
+        # ====================================================
+        # 成交量
+        # ====================================================
+
+
+        if volume >= 0.8:
+
+
+            score += 10
+
+
+
+        elif volume < 0.25:
+
+
+            score -= 10
+
+
+
+
+
+
+        # ====================================================
+        # confidence修正
+        # ====================================================
+
+
+        if confidence >= 70:
+
+
+            score += 10
+
+
+
+        elif confidence < 50:
+
+
+            score -= 10
+
+
+
+
+
+
+
+        return score
+
+
+
+
+
+
+
+
+
+
+
+    # ============================================================
+    # 成交量过滤
+    #
+    # V10.2.2
+    #
+    # 不再硬性禁止全部低量
+    #
+    # ============================================================
+
+
+    def check_volume(
+        self,
+        volume_ratio
+    ):
+
+
+
+        if volume_ratio is None:
+
+
+            return False
+
+
+
+
+
+        if volume_ratio < STRATEGY_CONFIG.get(
+
+            "MIN_VOLUME_RATIO_BLOCK",
+
+            0.25
+
+        ):
+
+
+            return False
+
+
+
+
+
+        return True
+
+
+        # ============================================================
+    # V10.2.2 入场过滤
+    #
+    # ============================================================
+
+
+    def check_entry_filter(
+        self,
+        direction,
+        market,
+        indicators
+    ):
+
+
+
+        result = {
+
+
+            "allow":
+
+                True,
+
+
+            "reason":
+
+                []
+
+        }
+
+
+
+
+
+        confidence = market.get(
+
+            "confidence",
+
+            0
+
+        )
+
+
+        trend = market.get(
+
+            "trend",
+
+            "neutral"
+
+        )
+
+
+
+        price = indicators.get(
+
+            "price",
+
+            0
+
+        )
+
 
         volume_ratio = indicators.get(
-            "VOLUME_RATIO"
+
+            "VOLUME_RATIO",
+
+            0
+
+        )
+
+
+        rsi = indicators.get(
+
+            "RSI",
+
+            50
+
+        )
+
+
+        ema20 = indicators.get(
+
+            "EMA20",
+
+            0
+
+        )
+
+
+        ema50 = indicators.get(
+
+            "EMA50",
+
+            0
+
+        )
+
+
+        vwap = indicators.get(
+
+            "VWAP",
+
+            0
+
         )
 
 
 
-        if atr is None or atr <= 0:
 
-            return result
 
+        # ====================================================
+        # confidence
+        # ====================================================
 
 
-        # =====================
-        # V10.1.7 智能风控过滤
-        # =====================
+        if confidence < STRATEGY_CONFIG.get(
 
+            "MIN_CONFIDENCE",
 
-        # 极端RSI保护
-        # 防止：
-        # RSI 16 BUY
-        # RSI 85 SELL
+            50
 
+        ):
 
-        if rsi is not None:
 
 
-            if (
-                signal in [
-                    "BUY",
-                    "WAIT_LONG",
-                    "WAIT_REVERSAL_LONG"
-                ]
-                and
-                rsi < 22
-            ):
-
-                result["reason"].append(
-                    "RSI极端超卖，等待企稳"
-                )
-
-                result["action"] = (
-                    "WAIT_REVERSAL"
-                )
-
-                return result
-
-
-
-            if (
-                signal in [
-                    "SELL",
-                    "WAIT_SHORT",
-                    "WAIT_REVERSAL_SHORT"
-                ]
-                and
-                rsi > 78
-            ):
-
-                result["reason"].append(
-                    "RSI极端超买，等待回落"
-                )
-
-                result["action"] = (
-                    "WAIT_REVERSAL"
-                )
-
-                return result
-
-
-
-
-        # =====================
-        # VWAP过滤
-        # =====================
-
-
-        if vwap:
-
-
-            distance = abs(
-                price - vwap
-            ) / vwap
-
-
-
-            if distance > 0.025:
-
-
-                result["reason"].append(
-                    "价格严重偏离VWAP"
-                )
-
-                return result
-
-
-
-            elif distance > 0.012:
-
-
-                score -= 10
-
-                result["reason"].append(
-                    "VWAP偏离降低评分"
-                )
-
-
-
-
-        # =====================
-        # 成交量保护
-        # =====================
-
-
-        if volume_ratio is not None:
-
-
-            if volume_ratio < 0.4:
-
-
-                result["reason"].append(
-                    "成交量不足"
-                )
-
-                return result
-
-
-
-            elif volume_ratio < 0.8:
-
-
-                score -= 10
-
-
-
-
-
-        # =====================
-        # V10.1.9 WAIT_CONFIRM强化过滤
-        # =====================
-
-        if signal in [
-            "WAIT_LONG",
-            "WAIT_SHORT"
-        ]:
-
-            if volume_ratio is not None and volume_ratio < 0.8:
-
-                result["reason"].append(
-                    "等待确认：成交量不足"
-                )
-
-                result["confidence"] = score
-
-                return result
-
-
-            if rsi is not None:
-
-                if signal == "WAIT_LONG" and rsi > 62:
-
-                    result["reason"].append(
-                        "等待确认：多头RSI偏高"
-                    )
-
-                    result["confidence"] = score
-
-                    return result
-
-
-                if signal == "WAIT_SHORT" and rsi < 38:
-
-                    result["reason"].append(
-                        "等待确认：空头RSI偏低"
-                    )
-
-                    result["confidence"] = score
-
-                    return result
-
-
-        # =====================
-        # WAIT信号处理
-        # =====================
-
-
-        if signal in [
-            "WAIT",
-            "WAIT_LONG",
-            "WAIT_SHORT"
-        ]:
-
-
-            result["confidence"] = score
-
-
-            result["action"] = (
-                "WAIT_CONFIRM"
-            )
+            result["allow"] = False
 
 
             result["reason"].append(
-                "等待方向确认"
-            )
 
-
-            # 注意：
-            # WAIT_LONG不直接过滤
-            # 后续继续判断
-
-
-        # =====================
-        # EMA距离保护
-        # =====================
-
-
-        if ema20:
-
-
-            deviation = (
-                price - ema20
-            ) / ema20
-
-
-
-            # 多头追涨保护
-
-            if (
-                deviation > 0.015
-                and
-                signal in [
-                    "BUY",
-                    "WAIT_LONG"
-                ]
-            ):
-
-
-                result["reason"].append(
-                    "价格远离EMA20，禁止追多"
-                )
-
-                return result
-
-
-
-            # 空头追杀保护
-
-            if (
-                deviation < -0.015
-                and
-                signal in [
-                    "SELL",
-                    "WAIT_SHORT"
-                ]
-            ):
-
-
-                result["reason"].append(
-                    "价格远离EMA20，禁止追空"
-                )
-
-                return result
-
-                # =====================
-        # BUY 多单核心逻辑
-        # =====================
-
-        if signal == "BUY":
-
-            if trend != "bullish":
-
-                result["reason"].append(
-                    "趋势未确认"
-                )
-
-                return result
-
-
-            confidence = 0
-
-
-            # 趋势评分
-
-            if score >= 70:
-
-                confidence += 35
-
-
-            # EMA趋势
-
-            if (
-                ema20
-                and
-                ema50
-                and
-                ema20 > ema50
-            ):
-
-                confidence += 25
-
-
-            # MACD
-
-            if macd is not None and macd > 0:
-
-                confidence += 20
-
-
-            # RSI正常区间
-
-            if (
-                rsi is not None
-                and
-                40 <= rsi <= 68
-            ):
-
-                confidence += 15
-
-
-            # 成交量确认
-
-            if (
-                volume_ratio is not None
-                and
-                volume_ratio >= 1
-            ):
-
-                confidence += 5
-
-
-
-            if confidence < 75:
-
-
-                result["reason"].append(
-                    "多头确认不足"
-                )
-
-                result["confidence"] = confidence
-
-                return result
-
-
-
-            stop_loss = (
-
-                price
-
-                -
-
-                atr * 1.8
+                "信心不足"
 
             )
 
 
-            take_profit = (
 
-                price
 
-                +
 
-                atr * 3.5
+
+
+        # ====================================================
+        # 成交量
+        #
+        # V10.2.2:
+        #
+        # 极低成交量禁止
+        #
+        # 普通低量允许
+        #
+        # ====================================================
+
+
+        if volume_ratio < STRATEGY_CONFIG.get(
+
+            "MIN_VOLUME_RATIO_BLOCK",
+
+            0.25
+
+        ):
+
+
+
+            result["allow"] = False
+
+
+            result["reason"].append(
+
+                "成交量极低"
 
             )
 
 
 
-            result.update({
-
-                "direction":
-                    "LONG",
-
-                "action":
-                    "ENTER",
-
-                "entry":
-                    round(price,2),
-
-                "stop_loss":
-                    round(stop_loss,2),
-
-                "take_profit":
-                    round(take_profit,2),
-
-                "risk_reward":
-                    2.0,
-
-                "confidence":
-                    confidence,
-
-                "reason":
-                    [
-                        "趋势多头确认",
-                        "EMA多头",
-                        "MACD多头",
-                        "允许做多"
-                    ]
-
-            })
 
 
 
 
-
-        # =====================
-        # SELL 空单核心逻辑
-        # =====================
-
-        elif signal == "SELL":
+        # ====================================================
+        # SHORT过滤
+        # ====================================================
 
 
-            if trend != "bearish":
+        if direction == "SHORT":
+
+
+
+
+            # RSI超低禁止追空
+
+
+            if rsi <= STRATEGY_CONFIG.get(
+
+                "RSI_OVERSOLD",
+
+                30
+
+            ):
+
+
+
+                result["allow"] = False
 
 
                 result["reason"].append(
-                    "空头趋势未确认"
+
+                    "RSI超卖禁止追空"
+
                 )
 
 
-                return result
-
-
-
-            confidence = 0
-
-
-
-            if score <= -70:
-
-                confidence += 35
-
-
-
-            if (
-                ema20
-                and
-                ema50
-                and
-                ema20 < ema50
-            ):
-
-                confidence +=25
-
-
-
-            if macd is not None and macd < 0:
-
-                confidence +=20
-
-
-
-            if (
-                rsi is not None
-                and
-                32 <= rsi <= 60
-            ):
-
-                confidence +=15
-
-
-
-            if (
-                volume_ratio is not None
-                and
-                volume_ratio >=1
-            ):
-
-                confidence +=5
 
 
 
 
 
-            if confidence <75:
+            # VWAP过滤
+
+
+            if vwap and price > vwap:
+
 
 
                 result["reason"].append(
-                    "空头确认不足"
+
+                     "价格低于VWAP,等待回踩确认"
+
                 )
 
-                result["confidence"] = confidence
-
-                return result
 
 
 
 
 
-            stop_loss = (
 
-                price
+            # bearish_rebound优化
 
-                +
 
-                atr * 1.8
+            if trend == "bearish_rebound":
+
+
+
+                # 允许反弹空
+
+                # 但是需要:
+                #
+                # RSI转弱
+                # MACD负值
+                # EMA空头
+
+
+
+                macd = indicators.get(
+
+                    "MACD",
+
+                    0
+
+                )
+
+
+
+                if not (
+
+                    ema20 < ema50
+
+                    and
+
+                    macd < 0
+
+                    and
+
+                    rsi < 75
+
+                ):
+
+
+
+                    result["allow"] = False
+
+
+                    result["reason"].append(
+
+                        "反弹空条件不足"
+
+                    )
+
+
+
+                else:
+
+
+
+                    result["reason"].append(
+
+                        "反弹空确认"
+
+                    )
+
+
+
+
+
+
+
+
+
+
+        # ====================================================
+        # LONG过滤
+        # ====================================================
+
+
+        elif direction == "LONG":
+
+
+
+
+
+            if rsi >= STRATEGY_CONFIG.get(
+
+                "RSI_OVERBUY",
+
+                75
+
+            ):
+
+
+
+                result["allow"] = False
+
+
+                result["reason"].append(
+
+                    "RSI超买禁止追多"
+
+                )
+
+
+
+
+
+
+
+            if vwap and price < vwap:
+
+
+
+                result["allow"] = False
+
+
+                result["reason"].append(
+
+                    "价格低于VWAP"
+
+                )
+
+
+
+
+
+
+
+        # ====================================================
+        # EMA趋势强度
+        # ====================================================
+
+
+        atr = indicators.get(
+
+            "ATR",
+
+            0
+
+        )
+
+
+
+        if ema20 and ema50 and atr:
+
+
+
+            distance = abs(
+
+                ema20 - ema50
 
             )
 
 
-            take_profit = (
 
-                price
-
-                -
-
-                atr * 3.5
-
-            )
+            if distance < atr * 0.2:
 
 
 
-            result.update({
+                result["allow"] = False
 
-                "direction":
-                    "SHORT",
-
-                "action":
-                    "ENTER",
-
-                "entry":
-                    round(price,2),
-
-                "stop_loss":
-                    round(stop_loss,2),
-
-                "take_profit":
-                    round(take_profit,2),
-
-                "risk_reward":
-                    2.0,
-
-                "confidence":
-                    confidence,
-
-                "reason":
-                    [
-                        "趋势空头确认",
-                        "EMA空头",
-                        "MACD空头",
-                        "允许做空"
-                    ]
-
-            })
-
-
-
-
-
-        # =====================
-        # WAIT_LONG 回踩做多
-        # =====================
-
-        elif signal == "WAIT_LONG":
-
-
-            confidence = 0
-
-
-
-            # 必须保持EMA结构
-
-            if (
-                ema20
-                and
-                price < ema20
-            ):
 
                 result["reason"].append(
-                    "价格跌破EMA20，等待恢复"
+
+                    "趋势强度不足"
+
                 )
 
-                return result
 
 
-
-
-
-            if score >=25:
-
-                confidence +=35
-
-
-
-            if (
-                ema20
-                and
-                ema50
-                and
-                ema20 > ema50
-            ):
-
-                confidence +=25
-
-
-
-            if macd is not None and macd >0:
-
-                confidence +=20
-
-
-
-            if (
-                rsi is not None
-                and
-                45 <= rsi <=60
-            ):
-
-                confidence +=15
-
-
-
-
-            if confidence >=85:
-
-
-                result.update({
-
-                    "direction":
-                        "LONG",
-
-                    "action":
-                        "ENTER",
-
-                    "entry":
-                        round(price,2),
-
-                    "stop_loss":
-                        round(
-                            price-atr*1.8,
-                            2
-                        ),
-
-                    "take_profit":
-                        round(
-                            price+atr*3.2,
-                            2
-                        ),
-
-                    "risk_reward":
-                        1.8,
-
-                    "confidence":
-                        confidence,
-
-                    "reason":
-                        [
-                            "趋势初期多头",
-                            "回踩确认",
-                            "允许做多"
-                        ]
-
-                })
-
-
-            else:
-
-
-                result.update({
-
-                    "direction":
-                        "NONE",
-
-                    "action":
-                        "WAIT_PULLBACK",
-
-                    "confidence":
-                        confidence,
-
-                    "reason":
-                        [
-                            "趋势偏多",
-                            "等待回踩"
-                        ]
-
-                })
-
-                # =====================
-        # WAIT_SHORT
-        # 趋势初期空头
-        # =====================
-
-        elif signal == "WAIT_SHORT":
-
-            confidence = 0
-
-
-            if ema20 and price > ema20:
-
-                result["reason"].append(
-                    "价格站上EMA20，空头无效"
-                )
-
-                return result
-
-
-
-            if score <= -25:
-
-                confidence += 35
-
-
-
-            if ema20 and ema50 and ema20 < ema50:
-
-                confidence += 25
-
-
-
-            if macd is not None and macd < 0:
-
-                confidence += 20
-
-
-
-            if rsi is not None and 35 <= rsi <= 60:
-
-                confidence += 15
-
-
-
-
-            if confidence >= 75:
-
-
-                result.update({
-
-                    "direction":
-                        "SHORT",
-
-
-                    "action":
-                        "ENTER",
-
-
-                    "entry":
-                        round(price,2),
-
-
-                    "stop_loss":
-                        round(
-                            price + atr * 1.8,
-                            2
-                        ),
-
-
-                    "take_profit":
-                        round(
-                            price - atr * 3.2,
-                            2
-                        ),
-
-
-                    "risk_reward":
-                        1.8,
-
-
-                    "confidence":
-                        confidence,
-
-
-                    "reason":
-                        [
-                            "趋势初期空头",
-                            "反弹确认",
-                            "允许做空"
-                        ]
-
-                })
-
-
-            else:
-
-
-                result.update({
-
-                    "direction":
-                        "NONE",
-
-
-                    "action":
-                        "WAIT_REBOUND",
-
-
-                    "confidence":
-                        confidence,
-
-
-                    "reason":
-                        [
-                            "趋势偏空",
-                            "等待反弹"
-                        ]
-
-                })
-
-
-
-
-
-        # =====================
-        # WAIT_REVERSAL_LONG
-        # 震荡/趋势反转多
-        # =====================
-
-
-        elif signal == "WAIT_REVERSAL_LONG":
-
-
-            confidence = 0
-
-
-
-            if market_mode == "RANGE":
-
-                confidence += 25
-
-
-
-            if rsi is not None and rsi < 35:
-
-                confidence += 30
-
-
-
-            if macd is not None and macd > -10:
-
-                confidence += 20
-
-
-
-            if ema20 and price <= ema20:
-
-                confidence += 15
-
-
-
-            if atr:
-
-                confidence += 10
-
-
-
-
-            if confidence >= 60:
-
-
-                result.update({
-
-                    "direction":
-                        "LONG",
-
-
-                    "action":
-                        "ENTER",
-
-
-                    "entry":
-                        round(price,2),
-
-
-                    "stop_loss":
-                        round(
-                            price - atr * 1.5,
-                            2
-                        ),
-
-
-                    "take_profit":
-                        round(
-                            price + atr * 2.5,
-                            2
-                        ),
-
-
-                    "risk_reward":
-                        1.7,
-
-
-                    "confidence":
-                        confidence,
-
-
-                    "position_ratio":
-                        0.5,
-
-
-                    "reason":
-                        [
-                            "反转多头机会",
-                            "超卖修复",
-                            "允许做多"
-                        ]
-
-                })
-
-
-
-
-        # =====================
-        # WAIT_REVERSAL_SHORT
-        # 震荡/趋势反转空
-        # =====================
-
-
-        elif signal == "WAIT_REVERSAL_SHORT":
-
-
-            confidence = 0
-
-
-
-
-            if market_mode == "RANGE":
-
-                confidence += 25
-
-
-
-            if rsi is not None and rsi > 65:
-
-                confidence += 30
-
-
-
-            if macd is not None and macd < 10:
-
-                confidence += 20
-
-
-
-            if ema20 and price >= ema20:
-
-                confidence += 15
-
-
-
-            if atr:
-
-                confidence += 10
-
-
-
-
-            if confidence >= 60:
-
-
-                result.update({
-
-                    "direction":
-                        "SHORT",
-
-
-                    "action":
-                        "ENTER",
-
-
-                    "entry":
-                        round(price,2),
-
-
-                    "stop_loss":
-                        round(
-                            price + atr * 1.5,
-                            2
-                        ),
-
-
-                    "take_profit":
-                        round(
-                            price - atr * 2.5,
-                            2
-                        ),
-
-
-                    "risk_reward":
-                        1.7,
-
-
-                    "confidence":
-                        confidence,
-
-
-                    "position_ratio":
-                        0.5,
-
-
-                    "reason":
-                        [
-                            "反转空头机会",
-                            "超买回落",
-                            "允许做空"
-                        ]
-
-                })
-
-
-
-
-
-        # =====================
-        # 其他情况
-        # =====================
-
-
-        else:
-
-
-            result.update({
-
-                "confidence":
-                    score,
-
-
-                "reason":
-                    [
-                        "交易信号不足"
-                    ]
-
-            })
 
 
 
 
         return result
 
-        
+
+
+
+
+
+
+
+
+
+    # ============================================================
+    # 交易条件检查
+    #
+    # 保留兼容
+    #
+    # ============================================================
+
+
+    def check_trade_condition(
+        self,
+        market,
+        indicators
+    ):
+
+
+
+        result = {
+
+
+            "allow":
+
+                False,
+
+
+            "reason":
+
+                []
+
+        }
+
+
+
+
+
+
+        if market is None:
+
+
+
+            result["reason"].append(
+
+                "无市场数据"
+
+            )
+
+
+            return result
+
+
+
+
+
+
+
+        if indicators is None:
+
+
+
+            result["reason"].append(
+
+                "无指标数据"
+
+            )
+
+
+            return result
+
+
+
+
+
+
+
+
+        confidence = market.get(
+
+            "confidence",
+
+            0
+
+        )
+
+
+
+        if confidence < STRATEGY_CONFIG.get(
+
+            "MIN_CONFIDENCE",
+
+            50
+
+        ):
+
+
+
+            result["reason"].append(
+
+                "信心不足"
+
+            )
+
+
+            return result
+
+
+
+
+
+
+
+        result["allow"] = True
+
+
+
+        result["reason"].append(
+
+            "交易条件满足"
+
+        )
+
+
+
+        return result
+
+        # ============================================================
+    # 开仓参数生成
+    #
+    # ============================================================
+
+
+    def build_order(
+        self,
+        direction,
+        price,
+        atr,
+        balance
+    ):
+
+
+
+        order = {
+
+
+            "direction":
+
+                direction,
+
+
+            "entry":
+
+                price,
+
+
+            "stop_loss":
+
+                None,
+
+
+            "take_profit":
+
+                None,
+
+
+            "size_btc":
+
+                0,
+
+
+            "risk_reward":
+
+                0
+
+        }
+
+
+
+
+
+        if direction not in [
+
+            "LONG",
+
+            "SHORT"
+
+        ]:
+
+
+            return order
+
+
+
+
+
+
+        order["stop_loss"] = self.calculate_stop_loss(
+
+            direction,
+
+            price,
+
+            atr
+
+        )
+
+
+
+        order["take_profit"] = self.calculate_take_profit(
+
+            direction,
+
+            price,
+
+            atr
+
+        )
+
+
+
+
+
+        order["risk_reward"] = self.calculate_risk_reward(
+
+            price,
+
+            order["stop_loss"],
+
+            order["take_profit"]
+
+        )
+
+
+
+
+
+
+
+        # ====================================================
+        # RR过滤
+        #
+        # V10.2.2
+        #
+        # ====================================================
+
+
+        if order["risk_reward"] < STRATEGY_CONFIG.get(
+
+            "MIN_RISK_REWARD",
+
+            1.5
+
+        ):
+
+
+            return {
+
+                "direction":
+
+                    "NONE",
+
+                "entry":
+
+                    None,
+
+                "stop_loss":
+
+                    None,
+
+                "take_profit":
+
+                    None,
+
+                "size_btc":
+
+                    0,
+
+                "risk_reward":
+
+                    order["risk_reward"]
+
+            }
+
+
+
+
+
+
+
+        order["size_btc"] = self.calculate_position_size(
+
+            balance,
+
+            price,
+
+            STRATEGY_CONFIG.get(
+
+                "DEFAULT_LEVERAGE",
+
+                30
+
+            )
+
+        )
+
+
+
+
+        return order
+
+
+
+
+
+
+
+    # ============================================================
+    # 止损计算
+    # ============================================================
+
+
+    def calculate_stop_loss(
+        self,
+        direction,
+        entry,
+        atr
+    ):
+
+
+        if direction == "LONG":
+
+
+            return round(
+
+                entry
+
+                -
+
+                atr *
+                STRATEGY_CONFIG.get(
+
+                    "STOP_ATR_MULTIPLE",
+
+                    1.8
+
+                ),
+
+                2
+
+            )
+
+
+
+
+        elif direction == "SHORT":
+
+
+            return round(
+
+                entry
+
+                +
+
+                atr *
+                STRATEGY_CONFIG.get(
+
+                    "STOP_ATR_MULTIPLE",
+
+                    1.8
+
+                ),
+
+                2
+
+            )
+
+
+
+        return None
+
+
+
+
+
+
+
+    # ============================================================
+    # 止盈计算
+    # ============================================================
+
+
+    def calculate_take_profit(
+        self,
+        direction,
+        entry,
+        atr
+    ):
+
+
+
+        if direction == "LONG":
+
+
+            return round(
+
+                entry
+
+                +
+
+                atr *
+                STRATEGY_CONFIG.get(
+
+                    "TAKE_PROFIT_ATR_MULTIPLE",
+
+                    3.2
+
+                ),
+
+                2
+
+            )
+
+
+
+
+
+        elif direction == "SHORT":
+
+
+            return round(
+
+                entry
+
+                -
+
+                atr *
+                STRATEGY_CONFIG.get(
+
+                    "TAKE_PROFIT_ATR_MULTIPLE",
+
+                    3.2
+
+                ),
+
+                2
+
+            )
+
+
+
+        return None
+
+
+
+
+
+
+
+    # ============================================================
+    # 仓位计算
+    #
+    # V10.2.2
+    #
+    # 风险模型
+    #
+    # ============================================================
+
+
+    def calculate_position_size(
+        self,
+        balance,
+        price,
+        leverage
+    ):
+
+
+
+        if balance <= 0 or price <= 0:
+
+
+            return 0
+
+
+
+
+
+
+        risk_percent = STRATEGY_CONFIG.get(
+
+            "MAX_POSITION_RISK",
+
+            0.01
+
+        )
+
+
+
+        risk_amount = balance * risk_percent
+
+
+
+
+
+        return round(
+
+            (
+
+                risk_amount
+
+                /
+
+                price
+
+            )
+
+            *
+
+            leverage,
+
+            4
+
+        )
+
+
+
+
+
+
+
+    # ============================================================
+    # 风险收益比
+    # ============================================================
+
+
+    def calculate_risk_reward(
+        self,
+        entry,
+        stop_loss,
+        take_profit
+    ):
+
+
+
+        risk = abs(
+
+            entry
+
+            -
+
+            stop_loss
+
+        )
+
+
+
+        reward = abs(
+
+            take_profit
+
+            -
+
+            entry
+
+        )
+
+
+
+        if risk <= 0:
+
+
+            return 0
+
+
+
+
+
+        return round(
+
+            reward / risk,
+
+            2
+
+        )
+
+
+
+
+
+
+
+    # ============================================================
+    # 完整交易决策
+    #
+    # ============================================================
+
+
+    def generate_trade_signal(
+        self,
+        market,
+        indicators,
+        balance=0
+    ):
+
+
+
+        result = self.generate_signal(
+
+            market,
+
+            indicators
+
+        )
+
+
+
+
+
+        if result["action"] != "ENTER":
+
+
+            return result
+
+
+
+
+
+        order = self.build_order(
+
+            result["direction"],
+
+            result["entry"],
+
+            indicators.get(
+
+                "ATR"
+
+            ),
+
+            balance
+
+        )
+
+
+
+        result.update(
+
+            order
+
+        )
+
+
+
+        if result.get(
+
+            "direction"
+
+        ) == "NONE":
+
+
+            result["action"] = "WAIT"
+
+
+            result["reason"].append(
+
+                "风险收益比不足"
+
+            )
+
+
+
+        return result
+
+
+
+
+
+
+
+    # ============================================================
+    # 持仓管理
+    #
+    # 注意:
+    #
+    # V10.2.2
+    #
+    # 移动止损交给PaperTrader
+    #
+    # ============================================================
+
+
+    def manage_position(
+        self,
+        position,
+        price,
+        atr
+    ):
+
+
+
+        return {
+
+
+            "action":
+
+                "HOLD",
+
+
+            "stop_loss":
+
+                position.get(
+
+                    "stop_loss"
+
+                )
+
+                if position
+
+                else None,
+
+
+            "reason":
+
+                [
+
+                    "执行层管理移动止损"
+
+                ]
+
+        }
+
+
+
+
+
+
+
+
+    # ============================================================
+    # 单例
+    # ============================================================
+
+
+btc_strategy = BTCStrategy()
+
+
+
+
+
+# ============================================================
+# 文件结束
+#
+# BTC AI Assistant V10.2.2
+#
+# strategy/btc_strategy_v10.2.2.py
+#
+# ============================================================
+    

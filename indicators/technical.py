@@ -744,39 +744,26 @@ class TechnicalIndicator:
 
 
     def volume_ratio(
-
         self,
-
         volumes,
-
         period
-
     ):
 
 
-
-        if len(volumes) < period + 1:
+        if len(volumes) < period + 2:
 
             return None
 
 
 
-
-
-        current = volumes[-1]
-
-
+        # 使用已经完成K线
+        current = volumes[-2]
 
 
 
         avg = sum(
-
-            volumes[-period-1:-1]
-
+            volumes[-period-2:-2]
         ) / period
-
-
-
 
 
 
@@ -786,13 +773,7 @@ class TechnicalIndicator:
 
 
 
-
-
-
         return round(
-
             current / avg,
-
             2
-
         )

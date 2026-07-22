@@ -382,20 +382,62 @@ class MarketAnalysis:
 
 
 
-        if trend_point >= 2:
+        # V10.1.9.1 趋势状态增强
+        # 增加 bullish_pullback / bearish_rebound
 
+        if (
+            ema20 is not None
+            and
+            ema50 is not None
+            and
+            macd is not None
+        ):
 
-            trend = "bullish"
+            if (
+                ema20 > ema50
+                and
+                macd > 0
+                and
+                price < ema20
+                and
+                price > ema50 - (atr or 0) * 0.5
+            ):
 
+                trend = "bullish_pullback"
 
-        elif trend_point <= -2:
+                reason.append(
+                    "上涨趋势回踩EMA确认"
+                )
 
+            elif (
+                ema20 < ema50
+                and
+                macd < 0
+                and
+                price > ema20
+                and
+                price < ema50 + (atr or 0) * 0.5
+            ):
 
-            trend = "bearish"
+                trend = "bearish_rebound"
 
+                reason.append(
+                    "下降趋势反弹确认"
+                )
+
+            elif trend_point >= 2:
+
+                trend = "bullish"
+
+            elif trend_point <= -2:
+
+                trend = "bearish"
+
+            else:
+
+                trend = "neutral"
 
         else:
-
 
             trend = "neutral"
 
@@ -487,7 +529,10 @@ class MarketAnalysis:
             # =====================
 
 
-            if trend == "bullish":
+            if trend in [
+                "bullish",
+                "bullish_pullback"
+            ]:
 
 
                 risk_warning = [
@@ -531,10 +576,16 @@ class MarketAnalysis:
 
 
 
-                elif score >= 45:
+                elif score >= 55:
 
 
                     signal = "WAIT_LONG"
+
+
+                elif score >= 40:
+
+
+                    signal = "WAIT_CONFIRM"
 
 
                     reason.append(
@@ -852,6 +903,18 @@ class MarketAnalysis:
                 100
             )
         )
+
+
+        # V10.1.9.1 趋势状态置信度修正
+        if trend in [
+            "bullish_pullback",
+            "bearish_rebound"
+        ]:
+
+            confidence = min(
+                confidence + 10,
+                100
+            )
 
 
 
