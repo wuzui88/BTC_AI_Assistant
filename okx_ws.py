@@ -8,27 +8,51 @@ import time
 
 class OKXFeed:
 
+
     def __init__(self):
 
         self.price = None
+
         self.bid = None
+
         self.ask = None
 
+
         self.high24h = None
+
         self.low24h = None
+
         self.volume24h = None
+
 
         self.connected = False
 
 
-    # WebSocket连接成功
+        self.ws = None
 
-    def on_open(self, ws):
 
-        print("OKX WebSocket连接成功")
+
+    # =================================================
+    # 连接成功
+    # =================================================
+
+
+    def on_open(
+            self,
+            ws
+    ):
+
+
+        print(
+            "OKX WebSocket连接成功"
+        )
 
 
         self.connected = True
+
+
+        self.ws = ws
+
 
 
         subscribe = {
@@ -39,9 +63,11 @@ class OKXFeed:
 
                 {
 
-                    "channel": "tickers",
+                    "channel":
+                        "tickers",
 
-                    "instId": "BTC-USDT-SWAP"
+                    "instId":
+                        "BTC-USDT-SWAP"
 
                 }
 
@@ -50,38 +76,122 @@ class OKXFeed:
         }
 
 
+
         ws.send(
             json.dumps(subscribe)
         )
 
 
-        print("OKX订阅 BTC-USDT-SWAP 成功")
+
+        print(
+            "OKX订阅 BTC-USDT-SWAP 成功"
+        )
 
 
 
+        # 启动OKX心跳
+
+        threading.Thread(
+
+            target=self.heartbeat,
+
+            args=(ws,),
+
+            daemon=True
+
+        ).start()
+
+
+
+
+
+    # =================================================
+    # OKX心跳
+    #
+    # 不使用websocket-client自动ping
+    #
+    # =================================================
+
+
+    def heartbeat(
+            self,
+            ws
+    ):
+
+
+        while self.connected:
+
+
+            try:
+
+
+                ws.send(
+                    "ping"
+                )
+
+
+                time.sleep(
+                    20
+                )
+
+
+            except Exception:
+
+
+                break
+
+
+
+
+
+
+    # =================================================
     # 接收行情
+    # =================================================
 
-    def on_message(self, ws, message):
+
+    def on_message(
+            self,
+            ws,
+            message
+    ):
+
 
         try:
 
 
-            # 如果是bytes，转字符串
-
-            if isinstance(message, bytes):
+            if isinstance(
+                    message,
+                    bytes
+            ):
 
                 message = message.decode(
                     "utf-8"
                 )
 
 
-            data = json.loads(message)
+
+            # OKX pong
+
+            if message == "pong":
+
+                return
 
 
 
-            # 忽略订阅确认
+            data = json.loads(
+                message
+            )
+
+
 
             if "data" not in data:
+
+                return
+
+
+
+            if not data["data"]:
 
                 return
 
@@ -130,16 +240,23 @@ class OKXFeed:
 
         except Exception as e:
 
+
             print(
                 "OKX数据解析错误:",
                 e
             )
 
+        # =================================================
+    # 错误处理
+    # =================================================
 
 
-    # 错误
+    def on_error(
+            self,
+            ws,
+            error
+    ):
 
-    def on_error(self, ws, error):
 
         print(
             "OKX错误:",
@@ -148,9 +265,20 @@ class OKXFeed:
 
 
 
-    # 关闭
 
-    def on_close(self, ws, close_status_code, close_msg):
+
+    # =================================================
+    # 连接关闭
+    # =================================================
+
+
+    def on_close(
+            self,
+            ws,
+            close_status_code,
+            close_msg
+    ):
+
 
         self.connected = False
 
@@ -161,15 +289,28 @@ class OKXFeed:
 
 
 
-    # 启动
 
-    def start(self):
+
+
+
+    # =================================================
+    # 启动WebSocket
+    # =================================================
+
+
+    def start(
+            self
+    ):
 
 
         url = (
+
             "wss://ws.okx.com:443/"
+
             "ws/v5/public"
+
         )
+
 
 
         def run():
@@ -181,15 +322,29 @@ class OKXFeed:
                 try:
 
 
+                    print(
+                        "正在连接OKX WebSocket..."
+                    )
+
+
+
+                    self.connected = False
+
+
+
                     ws = websocket.WebSocketApp(
 
                         url,
 
+
                         on_open=self.on_open,
+
 
                         on_message=self.on_message,
 
+
                         on_error=self.on_error,
+
 
                         on_close=self.on_close
 
@@ -197,28 +352,53 @@ class OKXFeed:
 
 
 
+                    # 关闭websocket-client自动ping
+
+                    # 使用OKX自定义heartbeat
+
                     ws.run_forever(
-                        ping_interval=20,
-                        ping_timeout=10
+
+                        ping_interval=0,
+
+                        ping_timeout=None
+
                     )
+
 
 
                 except Exception as e:
 
 
                     print(
+
                         "OKX连接异常:",
+
                         e
+
                     )
 
 
 
+                finally:
+
+
+                    self.connected = False
+
+
+
                 print(
-                    "5秒后重新连接OKX..."
+
+                    "OKX 10秒后重新连接..."
+
                 )
 
 
-                time.sleep(5)
+
+                time.sleep(
+                    10
+                )
+
+
 
 
 
@@ -229,6 +409,7 @@ class OKXFeed:
             daemon=True
 
         )
+
 
 
         thread.start()

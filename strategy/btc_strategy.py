@@ -1,136 +1,5 @@
 class BTCStrategy:
 
-    # =====================
-    # V10.1 新增：入场评分
-    # =====================
-    def calculate_entry_score(
-            self,
-            direction,
-            indicators,
-            candle_confirm=False
-    ):
-        score = 0
-
-        ema20 = indicators.get("EMA20")
-        ema50 = indicators.get("EMA50")
-        macd = indicators.get("MACD")
-        price = indicators.get("PRICE")
-        vwap = indicators.get("VWAP")
-        volume_ratio = indicators.get("VOLUME_RATIO")
-
-        if direction == "LONG":
-
-            if ema20 and ema50 and ema20 > ema50:
-                score += 20
-
-            if macd is not None and macd > 0:
-                score += 20
-
-            if price and vwap and price > vwap:
-                score += 20
-
-            if volume_ratio is not None and volume_ratio >= 0.8:
-                score += 20
-
-        else:
-
-            if ema20 and ema50 and ema20 < ema50:
-                score += 20
-
-            if macd is not None and macd < 0:
-                score += 20
-
-            if price and vwap and price < vwap:
-                score += 20
-
-            if volume_ratio is not None and volume_ratio >= 0.8:
-                score += 20
-
-        if candle_confirm:
-            score += 20
-
-        return score
-
-
-    # =====================
-    # V10.1 新增：K线确认
-    # =====================
-    def check_candle_confirmation(
-            self,
-            candles,
-            direction
-    ):
-        if not candles or len(candles) < 2:
-            return False
-
-        current = candles[-1]
-        previous = candles[-2]
-
-        current_open = current.get("open")
-        current_close = current.get("close")
-        current_high = current.get("high")
-        current_low = current.get("low")
-
-        prev_open = previous.get("open")
-        prev_close = previous.get("close")
-
-        if None in (
-            current_open,
-            current_close,
-            current_high,
-            current_low,
-            prev_open,
-            prev_close
-        ):
-            return False
-
-        body = abs(current_close-current_open)
-
-        if body == 0:
-            return False
-
-        if direction == "LONG":
-
-            lower_shadow = min(current_open,current_close)-current_low
-
-            bullish_engulf = (
-                current_close > current_open
-                and previous.get("close") < previous.get("open")
-                and current_close >= previous_open
-            )
-
-            return lower_shadow > body * 1.2 or bullish_engulf
-
-        else:
-
-            upper_shadow = current_high-max(current_open,current_close)
-
-            bearish_engulf = (
-                current_close < current_open
-                and previous.get("close") > previous.get("open")
-                and current_close <= previous_open
-            )
-
-            return upper_shadow > body * 1.2 or bearish_engulf
-
-
-    # =====================
-    # V10.1 新增：动态RR
-    # =====================
-    def calculate_dynamic_rr(
-            self,
-            score
-    ):
-        if score >= 80:
-            return 2.5
-
-        if score >= 60:
-            return 1.8
-
-        return 1.5
-
-
-
     def generate(
         self,
         price,
@@ -138,67 +7,49 @@ class BTCStrategy:
         market_analysis
     ):
 
-
         result = {
-
             "direction": "NONE",
-
             "action": "WAIT",
-
             "entry": None,
-
             "stop_loss": None,
-
             "take_profit": None,
-
             "risk_reward": None,
-
             "confidence": 0,
-
             "reason": []
-
         }
-
 
 
         # =====================
         # 数据保护
         # =====================
 
-
         if price is None:
-
             return result
 
 
-
         if indicators is None:
-
             indicators = {}
 
 
-
         if market_analysis is None:
-
             return result
 
 
 
         signal = market_analysis.get(
-            "signal"
+            "signal",
+            "WAIT"
         )
-
 
         trend = market_analysis.get(
-            "trend"
+            "trend",
+            "neutral"
         )
-
 
         score = market_analysis.get(
             "score",
             0
         )
-
 
         market_mode = market_analysis.get(
             "market_mode",
@@ -207,30 +58,20 @@ class BTCStrategy:
 
 
 
-        ema20 = indicators.get(
-            "EMA20"
-        )
+        ema20 = indicators.get("EMA20")
 
+        ema50 = indicators.get("EMA50")
 
-        ema50 = indicators.get(
-            "EMA50"
-        )
+        rsi = indicators.get("RSI")
 
+        macd = indicators.get("MACD")
 
-        atr = indicators.get(
-            "ATR"
-        )
+        atr = indicators.get("ATR")
 
+        vwap = indicators.get("VWAP")
 
-
-        rsi = indicators.get(
-            "RSI"
-        )
-
-
-
-        macd = indicators.get(
-            "MACD"
+        volume_ratio = indicators.get(
+            "VOLUME_RATIO"
         )
 
 
@@ -241,10 +82,206 @@ class BTCStrategy:
 
 
 
+        # =====================
+        # V10.1.7 智能风控过滤
+        # =====================
+
+
+        # 极端RSI保护
+        # 防止：
+        # RSI 16 BUY
+        # RSI 85 SELL
+
+
+        if rsi is not None:
+
+
+            if (
+                signal in [
+                    "BUY",
+                    "WAIT_LONG",
+                    "WAIT_REVERSAL_LONG"
+                ]
+                and
+                rsi < 22
+            ):
+
+                result["reason"].append(
+                    "RSI极端超卖，等待企稳"
+                )
+
+                result["action"] = (
+                    "WAIT_REVERSAL"
+                )
+
+                return result
+
+
+
+            if (
+                signal in [
+                    "SELL",
+                    "WAIT_SHORT",
+                    "WAIT_REVERSAL_SHORT"
+                ]
+                and
+                rsi > 78
+            ):
+
+                result["reason"].append(
+                    "RSI极端超买，等待回落"
+                )
+
+                result["action"] = (
+                    "WAIT_REVERSAL"
+                )
+
+                return result
+
+
+
 
         # =====================
-        # 价格距离EMA过滤
-        # 防止追高
+        # VWAP过滤
+        # =====================
+
+
+        if vwap:
+
+
+            distance = abs(
+                price - vwap
+            ) / vwap
+
+
+
+            if distance > 0.025:
+
+
+                result["reason"].append(
+                    "价格严重偏离VWAP"
+                )
+
+                return result
+
+
+
+            elif distance > 0.012:
+
+
+                score -= 10
+
+                result["reason"].append(
+                    "VWAP偏离降低评分"
+                )
+
+
+
+
+        # =====================
+        # 成交量保护
+        # =====================
+
+
+        if volume_ratio is not None:
+
+
+            if volume_ratio < 0.4:
+
+
+                result["reason"].append(
+                    "成交量不足"
+                )
+
+                return result
+
+
+
+            elif volume_ratio < 0.8:
+
+
+                score -= 10
+
+
+
+
+
+        # =====================
+        # V10.1.9 WAIT_CONFIRM强化过滤
+        # =====================
+
+        if signal in [
+            "WAIT_LONG",
+            "WAIT_SHORT"
+        ]:
+
+            if volume_ratio is not None and volume_ratio < 0.8:
+
+                result["reason"].append(
+                    "等待确认：成交量不足"
+                )
+
+                result["confidence"] = score
+
+                return result
+
+
+            if rsi is not None:
+
+                if signal == "WAIT_LONG" and rsi > 62:
+
+                    result["reason"].append(
+                        "等待确认：多头RSI偏高"
+                    )
+
+                    result["confidence"] = score
+
+                    return result
+
+
+                if signal == "WAIT_SHORT" and rsi < 38:
+
+                    result["reason"].append(
+                        "等待确认：空头RSI偏低"
+                    )
+
+                    result["confidence"] = score
+
+                    return result
+
+
+        # =====================
+        # WAIT信号处理
+        # =====================
+
+
+        if signal in [
+            "WAIT",
+            "WAIT_LONG",
+            "WAIT_SHORT"
+        ]:
+
+
+            result["confidence"] = score
+
+
+            result["action"] = (
+                "WAIT_CONFIRM"
+            )
+
+
+            result["reason"].append(
+                "等待方向确认"
+            )
+
+
+            # 注意：
+            # WAIT_LONG不直接过滤
+            # 后续继续判断
+
+
+        # =====================
+        # EMA距离保护
         # =====================
 
 
@@ -252,98 +289,127 @@ class BTCStrategy:
 
 
             deviation = (
-
                 price - ema20
-
             ) / ema20
 
 
 
-            # 高于EMA20超过1.2%
-            # 不追多
+            # 多头追涨保护
 
-            if deviation > 0.012:
+            if (
+                deviation > 0.015
+                and
+                signal in [
+                    "BUY",
+                    "WAIT_LONG"
+                ]
+            ):
 
 
                 result["reason"].append(
-
-                    "价格偏离EMA20过高"
-
+                    "价格远离EMA20，禁止追多"
                 )
-
 
                 return result
 
 
 
-        # =====================
-        # 多单
-        # =====================
+            # 空头追杀保护
 
+            if (
+                deviation < -0.015
+                and
+                signal in [
+                    "SELL",
+                    "WAIT_SHORT"
+                ]
+            ):
+
+
+                result["reason"].append(
+                    "价格远离EMA20，禁止追空"
+                )
+
+                return result
+
+                # =====================
+        # BUY 多单核心逻辑
+        # =====================
 
         if signal == "BUY":
 
-
-
-            # 趋势保护
-
             if trend != "bullish":
 
-
                 result["reason"].append(
-
                     "趋势未确认"
-
                 )
 
-
                 return result
-
 
 
             confidence = 0
 
 
+            # 趋势评分
 
             if score >= 70:
 
-                confidence += 40
+                confidence += 35
 
 
+            # EMA趋势
 
-            if ema20 and ema50 and ema20 > ema50:
+            if (
+                ema20
+                and
+                ema50
+                and
+                ema20 > ema50
+            ):
 
                 confidence += 25
 
 
+            # MACD
 
-            if macd and macd > 0:
+            if macd is not None and macd > 0:
 
                 confidence += 20
 
 
+            # RSI正常区间
 
-            if rsi and 45 <= rsi <= 65:
+            if (
+                rsi is not None
+                and
+                40 <= rsi <= 68
+            ):
 
-                confidence +=15
+                confidence += 15
+
+
+            # 成交量确认
+
+            if (
+                volume_ratio is not None
+                and
+                volume_ratio >= 1
+            ):
+
+                confidence += 5
 
 
 
-            # 必须达到置信度
-
-            if confidence < 70:
+            if confidence < 75:
 
 
                 result["reason"].append(
-
-                    "多头置信度不足"
-
+                    "多头确认不足"
                 )
 
+                result["confidence"] = confidence
 
                 return result
-
-
 
 
 
@@ -356,7 +422,6 @@ class BTCStrategy:
                 atr * 1.8
 
             )
-
 
 
             take_profit = (
@@ -373,91 +438,53 @@ class BTCStrategy:
 
             result.update({
 
-
-
                 "direction":
-
                     "LONG",
 
-
-
                 "action":
-
                     "ENTER",
 
-
-
                 "entry":
-
-                    round(
-                        price,
-                        2
-                    ),
-
-
+                    round(price,2),
 
                 "stop_loss":
-
-                    round(
-                        stop_loss,
-                        2
-                    ),
-
-
+                    round(stop_loss,2),
 
                 "take_profit":
-
-                    round(
-                        take_profit,
-                        2
-                    ),
-
-
+                    round(take_profit,2),
 
                 "risk_reward":
-
-                    1.9,
-
-
+                    2.0,
 
                 "confidence":
-
                     confidence,
 
-
-
                 "reason":
-
                     [
-
-                        "EMA多头确认",
-
-                        "MACD多头确认",
-
-                        "趋势评分满足",
-
+                        "趋势多头确认",
+                        "EMA多头",
+                        "MACD多头",
                         "允许做多"
-
                     ]
 
             })
-        
-        # =====================
-        # 空单
-        # =====================
 
+
+
+
+
+        # =====================
+        # SELL 空单核心逻辑
+        # =====================
 
         elif signal == "SELL":
-
 
 
             if trend != "bearish":
 
 
                 result["reason"].append(
-
                     "空头趋势未确认"
-
                 )
 
 
@@ -471,37 +498,58 @@ class BTCStrategy:
 
             if score <= -70:
 
-                confidence += 40
+                confidence += 35
 
 
 
-            if ema20 and ema50 and ema20 < ema50:
+            if (
+                ema20
+                and
+                ema50
+                and
+                ema20 < ema50
+            ):
 
                 confidence +=25
 
 
 
-            if macd and macd < 0:
+            if macd is not None and macd < 0:
 
                 confidence +=20
 
 
 
-            if rsi and 35 <= rsi <=55:
+            if (
+                rsi is not None
+                and
+                32 <= rsi <= 60
+            ):
 
                 confidence +=15
 
 
 
-            if confidence <70:
+            if (
+                volume_ratio is not None
+                and
+                volume_ratio >=1
+            ):
+
+                confidence +=5
+
+
+
+
+
+            if confidence <75:
 
 
                 result["reason"].append(
-
-                    "空头置信度不足"
-
+                    "空头确认不足"
                 )
 
+                result["confidence"] = confidence
 
                 return result
 
@@ -520,7 +568,6 @@ class BTCStrategy:
             )
 
 
-
             take_profit = (
 
                 price
@@ -535,71 +582,33 @@ class BTCStrategy:
 
             result.update({
 
-
-
                 "direction":
-
                     "SHORT",
 
-
-
                 "action":
-
                     "ENTER",
 
-
-
                 "entry":
-
-                    round(
-                        price,
-                        2
-                    ),
-
-
+                    round(price,2),
 
                 "stop_loss":
-
-                    round(
-                        stop_loss,
-                        2
-                    ),
-
-
+                    round(stop_loss,2),
 
                 "take_profit":
-
-                    round(
-                        take_profit,
-                        2
-                    ),
-
-
+                    round(take_profit,2),
 
                 "risk_reward":
-
-                    1.9,
-
-
+                    2.0,
 
                 "confidence":
-
                     confidence,
 
-
-
                 "reason":
-
                     [
-
-                        "EMA空头确认",
-
-                        "MACD空头确认",
-
-                        "趋势评分满足",
-
+                        "趋势空头确认",
+                        "EMA空头",
+                        "MACD空头",
                         "允许做空"
-
                     ]
 
             })
@@ -608,45 +617,71 @@ class BTCStrategy:
 
 
 
-
         # =====================
-        # 等待回调做多
+        # WAIT_LONG 回踩做多
         # =====================
-
 
         elif signal == "WAIT_LONG":
 
 
-            # 趋势初期多头：允许回踩确认后直接执行
-
             confidence = 0
 
-            # 趋势初期多头增加确认：价格不能跌破EMA20
-            if ema20 and price < ema20:
+
+
+            # 必须保持EMA结构
+
+            if (
+                ema20
+                and
+                price < ema20
+            ):
+
                 result["reason"].append(
-                    "价格弱于EMA20，等待多头确认"
+                    "价格跌破EMA20，等待恢复"
                 )
+
                 return result
 
 
-            if score >= 25:
-                confidence += 35
-
-
-            if ema20 and ema50 and ema20 > ema50:
-                confidence += 25
-
-
-            if macd is not None and macd > 0:
-                confidence += 20
-
-
-            if rsi is not None and 40 <= rsi <= 65:
-                confidence += 15
 
 
 
-            if confidence >= 65:
+            if score >=25:
+
+                confidence +=35
+
+
+
+            if (
+                ema20
+                and
+                ema50
+                and
+                ema20 > ema50
+            ):
+
+                confidence +=25
+
+
+
+            if macd is not None and macd >0:
+
+                confidence +=20
+
+
+
+            if (
+                rsi is not None
+                and
+                45 <= rsi <=60
+            ):
+
+                confidence +=15
+
+
+
+
+            if confidence >=85:
 
 
                 result.update({
@@ -661,13 +696,19 @@ class BTCStrategy:
                         round(price,2),
 
                     "stop_loss":
-                        round(price - atr * 1.8,2),
+                        round(
+                            price-atr*1.8,
+                            2
+                        ),
 
                     "take_profit":
-                        round(price + atr * 3.2,2),
+                        round(
+                            price+atr*3.2,
+                            2
+                        ),
 
                     "risk_reward":
-                        self.calculate_dynamic_rr(confidence),
+                        1.8,
 
                     "confidence":
                         confidence,
@@ -699,58 +740,57 @@ class BTCStrategy:
                     "reason":
                         [
                             "趋势偏多",
-                            "等待价格回踩"
+                            "等待回踩"
                         ]
 
                 })
 
-
-
-
-
-
-
-
-
-
+                # =====================
+        # WAIT_SHORT
+        # 趋势初期空头
         # =====================
-        # 等待反弹做空
-        # =====================
-
 
         elif signal == "WAIT_SHORT":
 
-
-            # 趋势初期空头：允许反弹确认后直接执行
-
             confidence = 0
 
-            # 趋势初期空头增加确认：价格不能站上EMA20
+
             if ema20 and price > ema20:
+
                 result["reason"].append(
-                    "价格站上EMA20，等待空头确认"
+                    "价格站上EMA20，空头无效"
                 )
+
                 return result
 
 
+
             if score <= -25:
+
                 confidence += 35
 
 
+
             if ema20 and ema50 and ema20 < ema50:
+
                 confidence += 25
 
 
+
             if macd is not None and macd < 0:
+
                 confidence += 20
 
 
+
             if rsi is not None and 35 <= rsi <= 60:
+
                 confidence += 15
 
 
 
-            if confidence >= 65:
+
+            if confidence >= 75:
 
 
                 result.update({
@@ -758,23 +798,36 @@ class BTCStrategy:
                     "direction":
                         "SHORT",
 
+
                     "action":
                         "ENTER",
+
 
                     "entry":
                         round(price,2),
 
+
                     "stop_loss":
-                        round(price + atr * 1.8,2),
+                        round(
+                            price + atr * 1.8,
+                            2
+                        ),
+
 
                     "take_profit":
-                        round(price - atr * 3.2,2),
+                        round(
+                            price - atr * 3.2,
+                            2
+                        ),
+
 
                     "risk_reward":
-                        self.calculate_dynamic_rr(confidence),
+                        1.8,
+
 
                     "confidence":
                         confidence,
+
 
                     "reason":
                         [
@@ -794,11 +847,14 @@ class BTCStrategy:
                     "direction":
                         "NONE",
 
+
                     "action":
                         "WAIT_REBOUND",
 
+
                     "confidence":
                         confidence,
+
 
                     "reason":
                         [
@@ -812,12 +868,9 @@ class BTCStrategy:
 
 
 
-
-
-
-
         # =====================
-        # 震荡超卖反弹做多
+        # WAIT_REVERSAL_LONG
+        # 震荡/趋势反转多
         # =====================
 
 
@@ -827,20 +880,35 @@ class BTCStrategy:
             confidence = 0
 
 
+
             if market_mode == "RANGE":
-                confidence += 30
+
+                confidence += 25
+
 
 
             if rsi is not None and rsi < 35:
+
                 confidence += 30
 
 
+
             if macd is not None and macd > -10:
+
                 confidence += 20
 
 
+
             if ema20 and price <= ema20:
+
                 confidence += 15
+
+
+
+            if atr:
+
+                confidence += 10
+
 
 
 
@@ -848,7 +916,6 @@ class BTCStrategy:
 
 
                 result.update({
-
 
                     "direction":
                         "LONG",
@@ -863,11 +930,17 @@ class BTCStrategy:
 
 
                     "stop_loss":
-                        round(price - atr * 1.5,2),
+                        round(
+                            price - atr * 1.5,
+                            2
+                        ),
 
 
                     "take_profit":
-                        round(price + atr * 2.5,2),
+                        round(
+                            price + atr * 2.5,
+                            2
+                        ),
 
 
                     "risk_reward":
@@ -878,9 +951,14 @@ class BTCStrategy:
                         confidence,
 
 
+                    "position_ratio":
+                        0.5,
+
+
                     "reason":
                         [
-                            "震荡超卖反弹",
+                            "反转多头机会",
+                            "超卖修复",
                             "允许做多"
                         ]
 
@@ -888,8 +966,10 @@ class BTCStrategy:
 
 
 
+
         # =====================
-        # 震荡超买回落做空
+        # WAIT_REVERSAL_SHORT
+        # 震荡/趋势反转空
         # =====================
 
 
@@ -899,20 +979,36 @@ class BTCStrategy:
             confidence = 0
 
 
+
+
             if market_mode == "RANGE":
-                confidence += 30
+
+                confidence += 25
+
 
 
             if rsi is not None and rsi > 65:
+
                 confidence += 30
 
 
+
             if macd is not None and macd < 10:
+
                 confidence += 20
 
 
+
             if ema20 and price >= ema20:
+
                 confidence += 15
+
+
+
+            if atr:
+
+                confidence += 10
+
 
 
 
@@ -920,7 +1016,6 @@ class BTCStrategy:
 
 
                 result.update({
-
 
                     "direction":
                         "SHORT",
@@ -935,11 +1030,17 @@ class BTCStrategy:
 
 
                     "stop_loss":
-                        round(price + atr * 1.5,2),
+                        round(
+                            price + atr * 1.5,
+                            2
+                        ),
 
 
                     "take_profit":
-                        round(price - atr * 2.5,2),
+                        round(
+                            price - atr * 2.5,
+                            2
+                        ),
 
 
                     "risk_reward":
@@ -950,9 +1051,14 @@ class BTCStrategy:
                         confidence,
 
 
+                    "position_ratio":
+                        0.5,
+
+
                     "reason":
                         [
-                            "震荡超买回落",
+                            "反转空头机会",
+                            "超买回落",
                             "允许做空"
                         ]
 
@@ -960,80 +1066,6 @@ class BTCStrategy:
 
 
 
-
-
-
-
-        # =====================
-        # 反转趋势V6
-        # =====================
-
-        elif signal == "WAIT_REVERSAL_LONG":
-
-            confidence = 0
-
-            if macd is not None and macd > 0:
-                confidence += 25
-
-            if rsi is not None and rsi >= 50:
-                confidence += 20
-
-            if ema20 and price >= ema20:
-                confidence += 20
-
-            if atr:
-                confidence += 15
-
-            if confidence >= 60:
-                result.update({
-                    "direction": "LONG",
-                    "action": "ENTER",
-                    "entry": round(price, 2),
-                    "stop_loss": round(price - atr * 1.5, 2),
-                    "take_profit": round(price + atr * 2.5, 2),
-                    "risk_reward": 1.7,
-                    "confidence": confidence,
-                    "reason": [
-                        "趋势反转多头",
-                        "MACD恢复",
-                        "允许做多"
-                    ],
-                    "position_ratio": 0.5
-                })
-
-
-        elif signal == "WAIT_REVERSAL_SHORT":
-
-            confidence = 0
-
-            if macd is not None and macd < 0:
-                confidence += 25
-
-            if rsi is not None and rsi <= 50:
-                confidence += 20
-
-            if ema20 and price <= ema20:
-                confidence += 20
-
-            if atr:
-                confidence += 15
-
-            if confidence >= 60:
-                result.update({
-                    "direction": "SHORT",
-                    "action": "ENTER",
-                    "entry": round(price, 2),
-                    "stop_loss": round(price + atr * 1.5, 2),
-                    "take_profit": round(price - atr * 2.5, 2),
-                    "risk_reward": 1.7,
-                    "confidence": confidence,
-                    "reason": [
-                        "趋势反转空头",
-                        "MACD转弱",
-                        "允许做空"
-                    ],
-                    "position_ratio": 0.5
-                })
 
 
         # =====================
@@ -1046,20 +1078,13 @@ class BTCStrategy:
 
             result.update({
 
-
-
                 "confidence":
-
                     score,
 
 
-
                 "reason":
-
                     [
-
                         "交易信号不足"
-
                     ]
 
             })
@@ -1069,3 +1094,4 @@ class BTCStrategy:
 
         return result
 
+        
