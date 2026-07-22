@@ -1,307 +1,351 @@
-# BTC AI Assistant System Architecture
+# BTC AI Assistant V10.3
+# System Architecture
 
 版本:
 V10.3-multi-timeframe
 
-更新时间:
-2026-07-22
-
-项目:
-BTC AI Assistant
-
-目标:
-构建一个基于实时行情、多周期技术分析、AI评分、风险控制和自动交易执行的 BTC 永续合约智能交易系统。
+分支:
+V10.3-multi-timeframe
 
 
 ---
 
-# 1. 系统总体架构
-
-                OKX / Binance
-                     |
-                     |
-             WebSocket行情层
-                     |
-                     v
-
-             data_feed
-
-                     |
-                     v
-
-          kline 多周期K线管理
-
-                     |
-                     |
-    --------------------------------
-    |              |               |
-    v              v               v
-
-   1H             15M             5M
-大趋势判断      趋势确认        入场分析
+# 1. 系统概述
 
 
-                     |
-                     v
+BTC AI Assistant 是一个面向 BTC 永续合约交易的 AI 辅助交易系统。
 
-             indicators
+系统目标：
 
-
-                     |
-                     v
-
-          market_analysis
-
-
-                     |
-                     v
-
-          scoring_engine
+1. 实时采集交易行情
+2. 构建多周期K线
+3. 计算技术指标
+4. 进行多周期市场分析
+5. 生成交易信号
+6. 执行模拟交易
+7. 管理仓位风险
+8. 记录交易结果
+9. 分析策略表现
 
 
-                     |
-                     v
+当前版本：
 
-           btc_strategy
+V10.3-multi-timeframe
 
+核心升级：
 
-                     |
-                     v
-
-                risk
-
-
-                     |
-                     v
-
-                trade
-
-
-                     |
-                     v
-
-              position管理
-
-
-                     |
-                     v
-
-              database记录
-
+- 多周期市场分析
+- 市场状态管理
+- 策略评分模型
+- 风险管理模块
+- 交易生命周期管理
 
 
 ---
 
-# 2. 核心模块说明
+# 2. 总体架构
+
+             Exchange
+                |
+                |
+      +----------------+
+      | WebSocket/API |
+      +----------------+
+                |
+                v
+
+          data_feed
+
+                |
+                v
+
+    +--------------------+
+    | Kline Builder      |
+    | Candle Manager     |
+    +--------------------+
+
+                |
+                v
+
+          indicators
+
+                |
+                v
+
+    +--------------------+
+    | Multi Timeframe    |
+    | Market Analysis    |
+    +--------------------+
+
+                |
+                v
+
+          analysis
+
+                |
+                v
+
+    +--------------------+
+    | Strategy Engine    |
+    | Scoring Engine     |
+    +--------------------+
+
+                |
+                v
+
+          risk
+
+                |
+                v
+
+    +--------------------+
+    | Paper Trader       |
+    | Position Manager   |
+    +--------------------+
+
+                |
+                v
+
+          database
+
+                |
+                v
+
+         Dashboard / Statistics
 
 
-## 2.1 data_feed
+---
+
+# 3. 数据采集层
 
 
-职责:
-
-- 获取交易所实时行情
-- WebSocket连接管理
-- Tick数据处理
+目录：
+data_feed/
 
 
-输入:
 
-交易所:
+职责：
 
-- OKX
-- Binance
+负责交易所行情接入。
 
 
-输出:
+主要模块：
+
+## okx_feed.py
+
+OKX实时行情。
+
+
+功能：
+
+- WebSocket行情订阅
+- Tick数据接收
+
+
+---
+
+## okx_api.py
+
+OKX REST API。
+
+
+功能：
+
+- 历史K线
+- 市场数据查询
+
+
+---
+
+## binance_feed.py
+
+Binance行情接口。
+
+
+---
+
+## market_manager.py
+
+
+市场数据统一管理。
+
+
+负责：
+
+- 当前价格
+- K线缓存
+- 市场状态
+
+
+---
+
+# 4. K线系统
+
+
+目录：
+
+
+kline/
+
+
+
+职责：
+
+构建标准交易K线。
+
+
+主要模块：
+
+## candle.py
+
+K线数据结构。
+
+
+---
+
+## kline_builder.py
+
+负责：
+
+- Tick转换K线
+- 周期生成
+
+
+支持：
+
+- 1分钟
+- 5分钟
+- 多周期扩展
+
+
+---
+
+## tick_cache.py
+
+Tick缓存。
+
+
+---
+
+# 5. 指标计算层
+
+
+目录：
+
+
+indicator/
+indicators/
+
+
+
+职责：
+
+技术指标计算。
+
+
+当前支持：
+
+- EMA
+- MACD
+- RSI
+- ATR
+- VWAP
+- Volume Ratio
+
+
+---
+
+主要文件：
+
+
+indicators/technical.py
+
+
+
+统一指标入口。
+
+
+输出：
 
 ```python
 {
-    price,
-    volume,
-    timestamp
+EMA20,
+EMA50,
+RSI,
+MACD,
+ATR,
+VWAP,
+VOLUME_RATIO,
+ATR_PERCENT
 }
+6. 多周期市场分析层
 
-2.2 kline
+目录：
 
-职责:
+market/
+analysis/
+market/multi_timeframe_analysis.py
 
-多周期K线管理。
+V10.3核心模块。
 
-支持周期:
+职责：
+
+融合多个周期：
+
+例如：
 
 1m
 5m
 15m
-1H
-4H
+1h
+4h
 
-功能:
+判断：
 
-K线缓存
-K线合成
-最新K线维护
+大趋势
+当前周期趋势
+趋势一致性
 
-输出:
-
-[
- {
-  open,
-  high,
-  low,
-  close,
-  volume,
-  time
- }
-]
-2.3 indicators
-
-职责:
-
-计算技术指标。
-
-当前指标:
-
-趋势指标
-EMA20
-EMA50
-动量指标
-RSI
-MACD
-波动指标
-ATR
-ATR_PERCENT
-成交指标
-Volume Ratio
-资金指标
-VWAP
-
-输出:
+输出：
 
 {
-"EMA20":0,
-"EMA50":0,
-"RSI":0,
-"MACD":0,
-"ATR":0,
-"VWAP":0,
-"VOLUME_RATIO":0
+trend,
+market_mode,
+score,
+confidence,
+signal
 }
-3. 多周期分析模型
-3.1 周期职责
-周期	职责
-4H	长期趋势
-1H	主要方向
-15M	趋势确认
-5M	交易信号
-1M	执行优化
-3.2 多周期决策逻辑
-
-例如:
-
-做空条件
-
-4H:
-
-下降趋势
-
-1H:
-
-EMA20 < EMA50
-MACD < 0
-
-15M:
-
-反弹失败
-
-5M:
-
-出现空头信号
-
-最终:
-
-允许SHORT
-
-如果周期冲突:
-
-例如:
-
-1H bullish
-
-5M bearish
-
-处理:
-
-禁止立即开仓
-
-等待周期统一
-4. Market Analysis
-
-文件:
-
 analysis/market_analysis.py
 
-职责:
+负责：
 
-判断市场状态。
+单周期市场状态分析。
 
-输出:
+核心：
 
-{
-"trend":"",
-"market_mode":"",
-"score":0,
-"signal":"",
-"confidence":0,
-"reason":[],
-"warning":[]
-}
+EMA趋势
+MACD方向
+RSI状态
+VWAP位置
+成交量
+ATR市场模式
+7. 策略层
 
-趋势类型:
+目录：
 
-bullish
+strategy/
+btc_strategy.py
 
-bearish
+交易决策核心。
 
-bullish_pullback
+职责：
 
-bearish_rebound
+输入：
 
-neutral
-5. Scoring Engine
+market
+indicators
 
-文件:
-
-strategy/scoring_engine.py
-
-职责:
-
-综合评分。
-
-评分来源:
-
-项目	分值
-EMA趋势	±30
-MACD	±20
-RSI	±15
-VWAP	±10
-成交量	±15
-ATR风险	±10
-
-输出:
-
--100 ~ +100
-6. Strategy Engine
-
-文件:
-
-strategy/btc_strategy.py
-
-职责:
-
-根据市场分析结果生成交易动作。
-
-输出:
+输出：
 
 {
 direction,
@@ -312,143 +356,244 @@ take_profit,
 risk_reward
 }
 
-动作:
+负责：
 
-ENTER
+做多条件
+做空条件
+入场过滤
+止盈止损计算
+scoring_engine.py
 
-WAIT
+统一评分模型。
+
+评分因素：
+
+项目	权重
+趋势	30
+EMA	20
+MACD	15
+VWAP	10
+RSI	10
+成交量	10
+confidence	10
+
+输出：
+
+score -100 ~ +100
+signal_filter.py
+
+信号过滤。
+
+负责：
+
+防止频繁交易
+风险过滤
+信号质量检查
+8. 风控系统
+
+目录：
+
+risk/
+risk_manager.py
+
+负责：
+
+仓位计算
+最大风险
+杠杆控制
+
+输入：
+
+balance
+risk_percent
+leverage
+
+输出：
+
+position_size
+margin
+risk_amount
+9. 交易执行层
+
+目录：
+
+trade/
+paper_trader.py
+
+模拟交易引擎。
+
+负责：
+
+开仓
+平仓
+止盈
+止损
+移动止损
+
+交易生命周期：
+
+SIGNAL
+
+↓
+
+OPEN
+
+↓
 
 HOLD
 
+↓
+
+TRAIL_STOP
+
+↓
+
 CLOSE
-7. Risk Management
+10. 持仓管理
 
-目录:
-
-risk/
-
-职责:
-
-仓位计算
-最大风险控制
-杠杆限制
-RR过滤
-
-当前模型:
-
-本金:
-
-20000 USDT
-
-单笔风险:
-
-1%
-
-最大风险:
-
-200 USDT
-8. Trade Execution
-
-目录:
-
-trade/
-
-职责:
-
-下单
-撤单
-模拟交易
-实盘接口
-
-支持:
-
-Paper Trading
-
-OKX Swap
-9. Position Management
-
-目录:
+目录：
 
 position/
+position_manager.py
 
-职责:
+负责：
 
-持仓记录
+当前持仓
 盈亏计算
-移动止损
-止盈止损
-10. Database
+状态同步
+11. 数据库层
 
-数据库:
+目录：
 
-btc_ai.db
+database/
 
-保存:
+负责：
 
-K线数据
-指标
-信号
+数据持久化。
+
+主要：
+
+market_db.py
+
+行情状态。
+
+position_db.py
+
+持仓。
+
+trade_db.py
+
+交易记录。
+
+sqlite_db.py
+
+数据库基础。
+
+12. 回测系统
+
+目录：
+
+backtest/
+
+负责：
+
+历史行情回测
+策略验证
+13. Dashboard
+
+目录：
+
+dashboard/
+
+提供：
+
+当前行情
+持仓状态
 交易记录
-回测结果
-11. 当前版本
-V10.2.2
+策略表现
+14. 主程序流程
 
-完成:
+main.py
 
-单周期交易
-策略评分
-风险控制
-V10.3
+执行流程：
 
-开发目标:
+启动
 
-完成:
+↓
+
+初始化数据库
+
+↓
+
+连接交易所
+
+↓
+
+获取Tick
+
+↓
+
+生成K线
+
+↓
+
+计算指标
+
+↓
 
 多周期分析
-大周期过滤
-小周期执行
-12. V10.3升级目标
-新交易流程
-Higher Timeframe
 
 ↓
 
-Trend Confirmation
+策略评分
 
 ↓
 
-Entry Signal
+生成交易信号
 
 ↓
 
-Risk Check
+风险检查
 
 ↓
 
-Order
+模拟交易
 
+↓
 
+保存数据库
 
-核心原则:
+↓
 
-不要因为5分钟短线信号逆势开仓。
+Dashboard展示
+15. 当前版本特点
 
-13. 后续规划
+V10.3-multi-timeframe
 
-V10.4:
+新增：
 
-AI预测模型
-情绪分析
-新闻因子
+多周期分析框架
+市场状态模块
+更完整交易链路
 
-V10.5:
+优化：
 
+策略评分
+风险过滤
+仓位管理
+交易记录
+16. 后续升级方向
+V10.4
+
+计划：
+
+多周期权重优化
+趋势一致性评分
+AI预测模型接入
+V10.5
+
+计划：
+
+实盘交易接口
 自动参数优化
-强化学习
-
-V11:
-
-多交易品种支持
-
-
----
+策略机器学习
