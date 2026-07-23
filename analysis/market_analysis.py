@@ -1,304 +1,1242 @@
+# ============================================================
+# market_analysis_v10.3.1.py
+#
+# BTC AI Assistant V10.3
+#
+# Multi Timeframe Market Analysis
+#
+# Upgrade:
+#
+# V10.3.1
+#
+# 1. 接入 multi_timeframe_analysis
+# 2. 支持 1H / 15M / 5M 多周期分析
+# 3. 保留 V10.2 接口兼容
+# 4. 增加高周期趋势保护
+# 5. 增加 MTF 状态输出
+#
+# ============================================================
+
+
+from market.multi_timeframe_analysis import (
+    mtf_analyzer
+)
+
+
+
+
+
 class MarketAnalysis:
+
+
+
+    def __init__(
+        self
+    ):
+
+
+        self.name = (
+
+            "MarketAnalysis_V10.3.1"
+
+        )
+
+
+        self.max_score = 100
+
+
+
+
+
+
+
+    # ========================================================
+    # 主入口
+    #
+    # 兼容旧调用:
+    #
+    # analyze(
+    #     candles,
+    #     indicators
+    # )
+    #
+    # 新:
+    #
+    # analyze(
+    #     candles,
+    #     indicators,
+    #     timeframe_data
+    # )
+    #
+    # ========================================================
+
 
     def analyze(
         self,
         candles,
-        indicators
+        indicators,
+        timeframe_data=None
     ):
 
-        # =====================
-        # 数据保护
-        # =====================
-
-        if candles is None or len(candles) == 0:
-
-            return {
-                "trend": "neutral",
-                "market_mode": "UNKNOWN",
-                "score": 0,
-                "signal": "WAIT",
-                "confidence": 0,
-                "reason": [
-                    "没有K线数据"
-                ],
-                "warning": [
-                    "等待行情"
-                ]
-            }
 
 
-        if indicators is None:
-            indicators = {}
+        result = {
+
+
+            "trend":
+
+                "neutral",
+
+
+            "market_mode":
+
+                "UNKNOWN",
+
+
+            "score":
+
+                0,
+
+
+            "signal":
+
+                "WAIT",
+
+
+            "confidence":
+
+                0,
+
+
+            "reason":
+
+                [],
+
+
+            "warning":
+
+                [],
+
+
+
+            # ===============================
+            # V10.3 新增
+            # ===============================
+
+
+            "higher_trend":
+
+                "unknown",
+
+
+            "mid_trend":
+
+                "unknown",
+
+
+            "lower_trend":
+
+                "unknown",
+
+
+            "mtf_score":
+
+                0,
+
+
+            "entry_signal":
+
+                "WAIT",
+
+
+            "mtf_alignment":
+
+                "NONE"
+
+
+        }
+
+
+
+
+
+
+
+        if not candles:
+
+
+
+            result["warning"].append(
+
+                "K线数据为空"
+
+            )
+
+
+            return result
+
+
+
+
+
+
+
+        if not indicators:
+
+
+
+            result["warning"].append(
+
+                "指标数据为空"
+
+            )
+
+
+            return result
+
+
+
+
+
+
+
+        # ====================================================
+        # 当前周期数据
+        #
+        # 默认5分钟
+        #
+        # ====================================================
+
+
+        price = float(
+
+            indicators.get(
+
+                "price",
+
+                candles[-1].get(
+
+                    "close",
+
+                    0
+
+                )
+
+            )
+
+        )
+
+
+
+        ema20 = float(
+
+            indicators.get(
+
+                "EMA20",
+
+                0
+
+            )
+
+        )
+
+
+
+        ema50 = float(
+
+            indicators.get(
+
+                "EMA50",
+
+                0
+
+            )
+
+        )
+
+
+
+        macd = float(
+
+            indicators.get(
+
+                "MACD",
+
+                0
+
+            )
+
+        )
+
+
+
+        rsi = float(
+
+            indicators.get(
+
+                "RSI",
+
+                50
+
+            )
+
+        )
+
+
+
+        vwap = float(
+
+            indicators.get(
+
+                "VWAP",
+
+                0
+
+            )
+
+        )
+
+
+
+        volume_ratio = float(
+
+            indicators.get(
+
+                "VOLUME_RATIO",
+
+                1
+
+            )
+
+        )
+
+
+
+        atr_percent = float(
+
+            indicators.get(
+
+                "ATR_PERCENT",
+
+                0
+
+            )
+
+        )
+
+
+
+
+
+
+
+        # ====================================================
+        # V10.3 多周期分析
+        #
+        # ====================================================
+
+
+        mtf_result = self.analyze_multi_timeframe(
+
+            timeframe_data
+
+        )
+
+
+
+        result.update(
+
+            mtf_result
+
+        )
+
+
+
+
+
+
+
+        # ====================================================
+        # 市场模式
+        # ====================================================
+
+
+        if atr_percent < 0.0005:
+
+
+            result["market_mode"] = "RANGE"
+
+
+            result["warning"].append(
+
+                "ATR过低，震荡市场"
+
+            )
+
+
+
+        else:
+
+
+            result["market_mode"] = "TREND"
+
+
+
+
+
+
+
+        # ====================================================
+        # 单周期基础评分
+        # ====================================================
+
+
+        score_data = self.calculate_score(
+
+            price,
+
+            ema20,
+
+            ema50,
+
+            macd,
+
+            rsi,
+
+            vwap,
+
+            volume_ratio,
+
+            result
+
+        )
+
+
+        result["score"] = score_data["score"]
+
+
+        result["reason"].extend(
+
+            score_data["reason"]
+
+        )
+
+
+        result["warning"].extend(
+
+            score_data["warning"]
+
+        )
+
+                # ====================================================
+        # MTF融合评分
+        #
+        # V10.3.1
+        #
+        # 权重:
+        #
+        # 1H  50%
+        # 15M 30%
+        # 5M  20%
+        #
+        # ====================================================
+
+
+        mtf_score = result.get(
+
+            "mtf_score",
+
+            0
+
+        )
+
+
+        base_score = result["score"]
+
+
+
+        final_score = int(
+
+            base_score * 0.7
+
+            +
+
+            mtf_score * 0.3
+
+        )
+
+
+
+        final_score = max(
+
+            -100,
+
+            min(
+
+                100,
+
+                final_score
+
+            )
+
+        )
+
+
+
+        result["score"] = final_score
+
+
+
+
+
+
+
+        # ====================================================
+        # 趋势判断
+        #
+        # MTF优先
+        #
+        # ====================================================
+
+
+        result["trend"] = self.detect_trend(
+
+            final_score,
+
+            result
+
+        )
+
+
+
+
+
+
+
+        # ====================================================
+        # MTF方向保护
+        #
+        # 防止逆大周期交易
+        #
+        # ====================================================
+
+
+        mtf_alignment = result.get(
+
+            "mtf_alignment",
+
+            "NONE"
+
+        )
+
+
+
+        if mtf_alignment == "BEARISH_PRESSURE":
+
+
+            if result["score"] > 0:
+
+
+                result["warning"].append(
+
+                    "高周期空头压制"
+
+                )
+
+
+                result["signal"] = "WAIT"
+
+
+
+                result["entry_signal"] = (
+
+                    "WAIT_LONG"
+
+                )
+
+
+
+                return self.finalize(
+
+                    result
+
+                )
+
+
+
+
+
+
+
+        elif mtf_alignment == "BULLISH_PRESSURE":
+
+
+            if result["score"] < 0:
+
+
+                result["warning"].append(
+
+                    "高周期多头支撑"
+
+                )
+
+
+                result["signal"] = "WAIT"
+
+
+
+                result["entry_signal"] = (
+
+                    "WAIT_SHORT"
+
+                )
+
+
+                return self.finalize(
+
+                    result
+
+                )
+
+
+
+
+
+
+
+        # ====================================================
+        # 信号生成
+        #
+        # ====================================================
+
+
+        if result["trend"] in [
+
+            "bullish",
+
+            "bullish_pullback"
+
+        ]:
+
+
+
+            if (
+
+                result["score"] >= 75
+
+                and
+
+                volume_ratio >= 0.8
+
+                and
+
+                rsi > 35
+
+            ):
+
+
+                result["signal"] = "BUY"
+
+
+                result["entry_signal"] = (
+
+                    "LONG_READY"
+
+                )
+
+
+                result["reason"].append(
+
+                    "多周期多头确认"
+
+                )
+
+
+
+
+            elif result["score"] >= 45:
+
+
+                result["signal"] = "WAIT_LONG"
+
+
+                result["entry_signal"] = (
+
+                    "WAIT_LONG"
+
+                )
+
+
+                result["reason"].append(
+
+                    "等待多头确认"
+
+                )
+
+
+
+
+
+
+
+        elif result["trend"] in [
+
+            "bearish",
+
+            "bearish_rebound"
+
+        ]:
+
+
+
+            if (
+
+                result["score"] <= -75
+
+                and
+
+                volume_ratio >= 0.8
+
+                and
+
+                rsi < 70
+
+            ):
+
+
+                result["signal"] = "SELL"
+
+
+                result["entry_signal"] = (
+
+                    "SHORT_READY"
+
+                )
+
+
+                result["reason"].append(
+
+                    "多周期空头确认"
+
+                )
+
+
+
+
+
+            elif result["score"] <= -45:
+
+
+                result["signal"] = "WAIT_SHORT"
+
+
+                result["entry_signal"] = (
+
+                    "WAIT_SHORT"
+
+                )
+
+
+                result["reason"].append(
+
+                    "等待空头确认"
+
+                )
+
+
+
+
+
+
+
+        else:
+
+
+
+            result["signal"] = "WAIT"
+
+
+            result["entry_signal"] = (
+
+                "WAIT"
+
+            )
+
+
+            result["reason"].append(
+
+                "趋势未确认"
+
+            )
+
+
+
+
+
+
+
+        return self.finalize(
+
+            result
+
+        )
+
+
+
+
+
+
+
+
+
+
+
+    # ========================================================
+    # 多周期分析
+    #
+    # V10.3.1
+    #
+    # ========================================================
+
+
+    def analyze_multi_timeframe(
+        self,
+        timeframe_data
+    ):
+
+
+
+        result = {
+
+
+            "higher_trend":
+
+                "unknown",
+
+
+            "mid_trend":
+
+                "unknown",
+
+
+            "lower_trend":
+
+                "unknown",
+
+
+            "mtf_score":
+
+                0,
+
+
+            "mtf_alignment":
+
+                "NONE"
+
+        }
+
+
+
+
+        if not timeframe_data:
+
+
+            return result
+
+
+
+
+
+
+
+        try:
+
+
+            mtf = mtf_analyzer.analyze(
+
+                timeframe_data
+
+            )
+
+
+        except Exception:
+
+
+            return result
+
+
+
+
+
+
+
+        result["higher_trend"] = mtf.get(
+
+            "1H",
+
+            "unknown"
+
+        )
+
+
+
+        result["mid_trend"] = mtf.get(
+
+            "15M",
+
+            "unknown"
+
+        )
+
+
+
+        result["lower_trend"] = mtf.get(
+
+            "5M",
+
+            "unknown"
+
+        )
+
+
+
+
+
+
 
 
         score = 0
 
+
+
+
+
+        # 1H权重最高
+
+
+        if result["higher_trend"] == "bullish":
+
+
+            score += 50
+
+
+
+        elif result["higher_trend"] == "bearish":
+
+
+            score -= 50
+
+
+
+
+
+
+
+        # 15M
+
+
+        if result["mid_trend"] == "bullish":
+
+
+            score += 30
+
+
+
+        elif result["mid_trend"] == "bearish":
+
+
+            score -= 30
+
+
+
+
+
+
+
+        # 5M
+
+
+        if result["lower_trend"] == "bullish":
+
+
+            score += 20
+
+
+
+        elif result["lower_trend"] == "bearish":
+
+
+            score -= 20
+
+
+
+
+
+
+
+        result["mtf_score"] = score
+
+
+
+
+
+
+
+        # ====================================================
+        # 周期一致性
+        # ====================================================
+
+
+        trends = [
+
+
+            result["higher_trend"],
+
+
+            result["mid_trend"],
+
+
+            result["lower_trend"]
+
+
+        ]
+
+
+
+
+
+
+        bullish_count = trends.count(
+
+            "bullish"
+
+        )
+
+
+        bearish_count = trends.count(
+
+            "bearish"
+
+        )
+
+
+
+
+
+
+
+        if bullish_count >= 2:
+
+
+            result["mtf_alignment"] = (
+
+                "BULLISH_PRESSURE"
+
+            )
+
+
+
+        elif bearish_count >= 2:
+
+
+            result["mtf_alignment"] = (
+
+                "BEARISH_PRESSURE"
+
+            )
+
+
+
+        else:
+
+
+            result["mtf_alignment"] = (
+
+                "MIXED"
+
+            )
+
+
+        return result
+
+        # ========================================================
+    # 基础技术评分
+    #
+    # V10.3.1
+    #
+    # ========================================================
+
+
+    def calculate_score(
+        self,
+        price,
+        ema20,
+        ema50,
+        macd,
+        rsi,
+        vwap,
+        volume_ratio,
+        result
+    ):
+
+
+
+        score = 0
+
+
         reason = []
+
 
         warning = []
 
 
-        # =====================
-        # 获取指标
-        # =====================
-
-        ema20 = indicators.get(
-            "EMA20"
-        )
-
-        ema50 = indicators.get(
-            "EMA50"
-        )
-
-        rsi = indicators.get(
-            "RSI"
-        )
-
-        macd = indicators.get(
-            "MACD"
-        )
-
-        atr = indicators.get(
-            "ATR"
-        )
-
-        volume_ratio = indicators.get(
-            "VOLUME_RATIO",
-            0
-        )
-
-        vwap = indicators.get(
-            "VWAP"
-        )
-
-
-        price = candles[-1]["close"]
-
-
-        # =====================
-        # 初始化
-        # =====================
-
-        signal = "WAIT"
-
-        market_mode = "TREND"
 
 
 
-        # =====================
-        # ATR市场模式
-        # =====================
-
-        if atr is not None and price > 0:
-
-            atr_ratio = atr / price
+        # ====================================================
+        # EMA趋势
+        # ====================================================
 
 
-            if atr_ratio < 0.0005:
-
-                market_mode = "RANGE"
-
-                warning.append(
-                    "ATR过低，市场震荡"
-                )
+        if ema20 and ema50:
 
 
 
-        # =====================
-        # EMA趋势判断
-        #
-        # V10.1.7
-        # 提高趋势确认要求
-        # =====================
+            if ema20 > ema50:
 
-        ema_trend = 0
-
-
-        if ema20 is not None and ema50 is not None:
-
-
-            ema_diff = (
-                ema20 - ema50
-            ) / ema50
-
-
-
-            # 提高到0.12%
-
-            if ema_diff > 0.0012:
-
-                ema_trend = 1
 
                 score += 30
 
+
                 reason.append(
+
                     "EMA多头排列"
+
                 )
 
 
-            elif ema_diff < -0.0012:
 
-                ema_trend = -1
+            elif ema20 < ema50:
+
 
                 score -= 30
 
+
                 reason.append(
+
                     "EMA空头排列"
+
                 )
+
 
 
             else:
 
+
                 warning.append(
+
                     "EMA趋势不足"
+
                 )
 
 
 
-        # =====================
-        # RSI分析
-        #
-        # V10.1.7核心修改
-        # 防止RSI16追多
-        # =====================
 
 
-        extreme_rsi = False
 
 
-        if rsi is not None:
+        # ====================================================
+        # MACD
+        # ====================================================
 
 
-            if rsi >= 75:
+        if macd > 0:
 
-                score -= 15
 
-                warning.append(
-                    "RSI超买"
-                )
+            score += 20
 
 
-            elif 60 <= rsi < 75:
+            reason.append(
 
-                score += 5
+                "MACD多头确认"
 
-                warning.append(
-                    "RSI偏高"
-                )
+            )
 
 
-            elif 45 <= rsi < 60:
 
-                score += 5
+        elif macd < 0:
 
-                reason.append(
-                    "RSI正常"
-                )
 
+            score -= 20
 
-            elif 30 <= rsi < 45:
 
-                score -= 5
+            reason.append(
 
-                reason.append(
-                    "RSI偏弱"
-                )
+                "MACD空头确认"
 
+            )
 
-            elif rsi < 30:
 
-                extreme_rsi = True
 
-                score += 0
 
-                warning.append(
-                    "RSI极端超卖"
-                )
 
 
 
-        # =====================
-        # MACD分析
-        # =====================
+        # ====================================================
+        # RSI
+        # ====================================================
 
 
-        macd_trend = 0
+        if rsi < 35:
 
 
-        if macd is not None:
+            score -= 5
 
 
-            if macd > 0:
+            reason.append(
 
-                macd_trend = 1
+                "RSI偏弱"
 
-                score += 20
+            )
 
-                reason.append(
-                    "MACD多头确认"
-                )
 
 
-            else:
+        elif rsi > 65:
 
-                macd_trend = -1
 
-                score -= 20
+            score += 5
 
-                reason.append(
-                    "MACD空头确认"
-                )
 
-                # =====================
-        # 成交量分析
-        #
-        # V10.1.7
-        # 增加开仓过滤
-        # =====================
+            reason.append(
 
+                "RSI偏强"
 
-        if volume_ratio is not None:
+            )
 
 
-            if volume_ratio >= 2:
 
+        else:
 
-                score += 20
 
+            reason.append(
 
-                reason.append(
-                    "成交量明显放大"
-                )
+                "RSI中性"
 
+            )
 
-            elif volume_ratio >= 0.8:
 
 
-                score += 10
 
 
-                reason.append(
-                    "成交量正常"
-                )
 
 
-            else:
+        # ====================================================
+        # VWAP
+        # ====================================================
 
 
-                warning.append(
-                    "成交量不足"
-                )
+        if vwap and price:
 
-
-
-        # =====================
-        # VWAP分析
-        #
-        # 保留评分模式
-        # =====================
-
-
-        if vwap is not None and price > 0:
 
 
             if price > vwap:
@@ -308,8 +1246,11 @@ class MarketAnalysis:
 
 
                 reason.append(
+
                     "价格位于VWAP上方"
+
                 )
+
 
 
             else:
@@ -319,631 +1260,71 @@ class MarketAnalysis:
 
 
                 reason.append(
+
                     "价格位于VWAP下方"
+
                 )
 
 
 
-        # =====================
-        # EMA20偏离保护
-        #
-        # 防止追涨
-        # =====================
-
-
-        ema_deviation = 0
-
-
-        if ema20 is not None:
-
-
-            ema_deviation = (
-
-                price - ema20
-
-            ) / ema20
 
 
 
-            if ema_deviation > 0.012:
+
+        # ====================================================
+        # 成交量
+        # ====================================================
 
 
-                score -= 15
+        if volume_ratio >= 1:
 
 
-                warning.append(
-                    "价格偏离EMA20"
-                )
+            score += 10
 
 
-            elif ema_deviation < -0.012:
+            reason.append(
 
+                "成交量正常"
 
-                warning.append(
-                    "价格弱于EMA20"
-                )
-
-
-
-        # =====================
-        # 综合趋势
-        # =====================
-
-
-        trend_point = (
-
-            ema_trend
-
-            +
-
-            macd_trend
-
-        )
+            )
 
 
 
-        # V10.1.9.1 趋势状态增强
-        # 增加 bullish_pullback / bearish_rebound
-
-        if (
-            ema20 is not None
-            and
-            ema50 is not None
-            and
-            macd is not None
-        ):
-
-            if (
-                ema20 > ema50
-                and
-                macd > 0
-                and
-                price < ema20
-                and
-                price > ema50 - (atr or 0) * 0.5
-            ):
-
-                trend = "bullish_pullback"
-
-                reason.append(
-                    "上涨趋势回踩EMA确认"
-                )
-
-            elif (
-                ema20 < ema50
-                and
-                macd < 0
-                and
-                price > ema20
-                and
-                price < ema50 + (atr or 0) * 0.5
-            ):
-
-                trend = "bearish_rebound"
-
-                reason.append(
-                    "下降趋势反弹确认"
-                )
-
-            elif trend_point >= 2:
-
-                trend = "bullish"
-
-            elif trend_point <= -2:
-
-                trend = "bearish"
-
-            else:
-
-                trend = "neutral"
-
-        else:
-
-            trend = "neutral"
+        elif volume_ratio < 0.5:
 
 
-
-        # =====================
-        # V10.1.7 极端RSI保护
-        #
-        # RSI <30 不允许BUY
-        # =====================
-
-
-        if extreme_rsi:
+            score -= 10
 
 
             warning.append(
-                "等待RSI修复确认"
+
+                "成交量不足"
+
             )
 
 
 
-        # =====================
-        # RANGE震荡模式
-        # =====================
+        else:
 
 
-        if market_mode == "RANGE":
+            warning.append(
 
+                "成交量一般"
 
-            if (
-                rsi is not None
-                and
-                rsi < 35
-                and
-                price <= ema20
-                and
-                macd is not None
-                and
-                macd > -50
-            ):
-
-
-                signal = "WAIT_REVERSAL_LONG"
-
-
-                reason.append(
-                    "震荡超卖反弹机会"
-                )
-
-
-
-            elif (
-                rsi is not None
-                and
-                rsi > 65
-                and
-                price >= ema20
-                and
-                macd is not None
-                and
-                macd < 50
-            ):
-
-
-                signal = "WAIT_REVERSAL_SHORT"
-
-
-                reason.append(
-                    "震荡超买回落机会"
-                )
-
-
-
-        # =====================
-        # TREND趋势模式
-        # =====================
-
-
-        if (
-            market_mode == "TREND"
-            and
-            signal == "WAIT"
-        ):
-
-
-
-            # =====================
-            # 多头趋势
-            # =====================
-
-
-            if trend in [
-                "bullish",
-                "bullish_pullback"
-            ]:
-
-
-                risk_warning = [
-
-                    x for x in warning
-
-                    if x not in [
-
-                        "RSI极端超卖"
-
-                    ]
-
-                ]
-
-
-                # V10.1.7
-                # BUY提高门槛
-
-
-                if (
-                    score >= 75
-                    and
-                    not extreme_rsi
-                    and
-                    rsi is not None
-                    and
-                    rsi > 35
-                    and
-                    volume_ratio >= 0.8
-                    and
-                    len(risk_warning) == 0
-                ):
-
-
-                    signal = "BUY"
-
-
-                    reason.append(
-                        "多头趋势确认"
-                    )
-
-
-
-                elif score >= 55:
-
-
-                    signal = "WAIT_LONG"
-
-
-                elif score >= 40:
-
-
-                    signal = "WAIT_CONFIRM"
-
-
-                    reason.append(
-                        "等待多头确认"
-                    )
-
-
-
-
-            # =====================
-            # 空头趋势
-            # =====================
-
-
-            elif trend == "bearish":
-
-
-                risk_warning = [
-
-                    x for x in warning
-
-                    if x not in [
-
-                        "RSI极端超卖"
-
-                    ]
-
-                ]
-
-
-                if (
-                    score <= -75
-                    and
-                    rsi is not None
-                    and
-                    rsi < 65
-                    and
-                    volume_ratio >= 0.8
-                    and
-                    len(risk_warning) == 0
-                ):
-
-
-                    signal = "SELL"
-
-
-                    reason.append(
-                        "空头趋势确认"
-                    )
-
-
-
-                elif score <= -45:
-
-
-                    signal = "WAIT_SHORT"
-
-
-                    reason.append(
-                        "等待空头确认"
-                    )
-
-                # =====================
-        # 趋势初期增强
-        #
-        # V10.1.7
-        # 保留V8逻辑
-        # =====================
-
-
-        if (
-            market_mode == "TREND"
-            and
-            signal == "WAIT"
-        ):
-
-
-            # 初期多头
-
-
-            if (
-                ema20 is not None
-                and
-                ema50 is not None
-                and
-                macd is not None
-                and
-                rsi is not None
-                and
-                ema20 > ema50
-                and
-                macd > 0
-                and
-                rsi >= 45
-                and
-                score >= 20
-            ):
-
-
-                signal = "WAIT_LONG"
-
-
-                reason.append(
-                    "趋势初期多头机会"
-                )
-
-
-
-            # 初期空头
-
-
-            elif (
-                ema20 is not None
-                and
-                ema50 is not None
-                and
-                macd is not None
-                and
-                rsi is not None
-                and
-                ema20 < ema50
-                and
-                macd < 0
-                and
-                rsi <= 55
-                and
-                score <= -20
-            ):
-
-
-                signal = "WAIT_SHORT"
-
-
-                reason.append(
-                    "趋势初期空头机会"
-                )
-
-
-
-        # =====================
-        # WAIT_LONG增强确认
-        #
-        # 防止假多
-        # =====================
-
-
-        if signal == "WAIT_LONG":
-
-
-            if extreme_rsi:
-
-
-                signal = "WAIT"
-
-
-                reason.append(
-                    "RSI极端，等待修复"
-                )
-
-
-            elif (
-                volume_ratio is not None
-                and
-                volume_ratio < 0.5
-            ):
-
-
-                signal = "WAIT"
-
-
-                reason.append(
-                    "成交量不足"
-                )
-
-
-
-        # =====================
-        # WAIT_SHORT增强确认
-        # =====================
-
-
-        if signal == "WAIT_SHORT":
-
-
-            if (
-                volume_ratio is not None
-                and
-                volume_ratio < 0.5
-            ):
-
-
-                signal = "WAIT"
-
-
-                reason.append(
-                    "成交量不足"
-                )
-
-
-
-        # =====================
-        # 趋势反转机会
-        #
-        # V10.1.7 合并版
-        #
-        # 删除重复覆盖
-        # =====================
-
-
-        if (
-            signal == "WAIT"
-            and
-            market_mode == "TREND"
-        ):
-
-
-
-            # 多头反转
-
-
-            if (
-                ema20 is not None
-                and
-                ema50 is not None
-                and
-                macd is not None
-                and
-                rsi is not None
-                and
-                price > ema20
-                and
-                macd > 0
-                and
-                rsi >= 50
-                and
-                ema20 >= ema50 * 0.999
-            ):
-
-
-                signal = "WAIT_REVERSAL_LONG"
-
-
-                reason.append(
-                    "趋势反转多头机会"
-                )
-
-
-
-            # 空头反转
-
-
-            elif (
-                ema20 is not None
-                and
-                ema50 is not None
-                and
-                macd is not None
-                and
-                rsi is not None
-                and
-                price < ema20
-                and
-                macd < 0
-                and
-                rsi <= 50
-                and
-                ema20 <= ema50 * 1.001
-            ):
-
-
-                signal = "WAIT_REVERSAL_SHORT"
-
-
-                reason.append(
-                    "趋势反转空头机会"
-                )
-
-
-
-        # =====================
-        # 最终保护
-        #
-        # V10.1.7
-        # 禁止极端RSI开仓信号
-        # =====================
-
-
-        if extreme_rsi:
-
-
-            if signal in [
-                "BUY",
-                "SELL"
-            ]:
-
-
-                signal = "WAIT"
-
-
-                reason.append(
-                    "极端RSI取消开仓"
-                )
-
-
-
-        # =====================
-        # confidence
-        # =====================
-
-
-        confidence = max(
-            0,
-            min(
-                abs(score),
-                100
             )
-        )
 
 
-        # V10.1.9.1 趋势状态置信度修正
-        if trend in [
-            "bullish_pullback",
-            "bearish_rebound"
-        ]:
 
-            confidence = min(
-                confidence + 10,
-                100
-            )
+
 
 
 
         return {
 
 
-            "trend":
-
-                trend,
-
-
-            "market_mode":
-
-                market_mode,
-
-
             "score":
 
                 score,
-
-
-            "signal":
-
-                signal,
-
-
-            "confidence":
-
-                confidence,
 
 
             "reason":
@@ -956,3 +1337,293 @@ class MarketAnalysis:
                 warning
 
         }
+
+
+
+
+
+
+
+
+
+    # ========================================================
+    # 趋势识别
+    #
+    # ========================================================
+
+
+    def detect_trend(
+        self,
+        score,
+        result
+    ):
+
+
+
+        higher = result.get(
+
+            "higher_trend",
+
+            "unknown"
+
+        )
+
+
+        mid = result.get(
+
+            "mid_trend",
+
+            "unknown"
+
+        )
+
+
+        lower = result.get(
+
+            "lower_trend",
+
+            "unknown"
+
+        )
+
+
+
+
+
+
+        # ====================================================
+        # 高周期优先
+        # ====================================================
+
+
+        if higher == "bearish":
+
+
+
+            if lower == "bullish":
+
+
+                return (
+
+                    "bearish_rebound"
+
+                )
+
+
+
+            return (
+
+                "bearish"
+
+            )
+
+
+
+
+
+
+
+        if higher == "bullish":
+
+
+
+            if lower == "bearish":
+
+
+                return (
+
+                    "bullish_pullback"
+
+                )
+
+
+
+            return (
+
+                "bullish"
+
+            )
+
+
+
+
+
+
+
+        # ====================================================
+        # 没有MTF时兼容旧逻辑
+        # ====================================================
+
+
+        if score >= 40:
+
+
+            return "bullish"
+
+
+
+
+        elif score <= -40:
+
+
+            return "bearish"
+
+
+
+
+        return "neutral"
+
+
+
+
+
+
+
+
+
+    # ========================================================
+    # 最终整理输出
+    #
+    # ========================================================
+
+
+    def finalize(
+        self,
+        result
+    ):
+
+
+
+        score = result.get(
+
+            "score",
+
+            0
+
+        )
+
+
+
+
+
+        # confidence
+
+        confidence = abs(
+
+            score
+
+        )
+
+
+
+        confidence = min(
+
+            confidence,
+
+            100
+
+        )
+
+
+
+        result["confidence"] = confidence
+
+
+
+
+
+
+
+        # ====================================================
+        # 信号安全限制
+        # ====================================================
+
+
+        if result["signal"] == "BUY":
+
+
+
+            if confidence < 60:
+
+
+                result["signal"] = "WAIT"
+
+
+                result["entry_signal"] = (
+
+                    "WAIT"
+
+                )
+
+
+                result["reason"].append(
+
+                    "信心不足"
+
+                )
+
+
+
+
+
+
+
+        elif result["signal"] == "SELL":
+
+
+
+            if confidence < 60:
+
+
+                result["signal"] = "WAIT"
+
+
+                result["entry_signal"] = (
+
+                    "WAIT"
+
+                )
+
+
+                result["reason"].append(
+
+                    "信心不足"
+
+                )
+
+
+
+
+
+
+
+        return result
+
+
+
+
+
+
+
+
+
+
+
+# ============================================================
+# 单例
+# ============================================================
+
+
+market_analysis = MarketAnalysis()
+
+
+
+
+
+# ============================================================
+# 文件结束
+#
+# BTC AI Assistant V10.3.1
+#
+# ============================================================
+
