@@ -1,5 +1,23 @@
 # BTC AI Assistant Development Roadmap
+V10.5 Core Upgrade
 
+├── V10.5.1 Market Regime
+│   状态：进行中
+│
+├── V10.5.2 Scoring Engine
+│   状态：计划
+│
+├── V10.5.3 Risk Engine
+│   状态：计划
+│
+├── V10.5.4 Position Manager
+│   状态：计划
+│
+├── V10.6 AI Engine
+│   状态：未来
+│
+└── V11 Production
+    实盘版本
 
 ## 当前版本
 
