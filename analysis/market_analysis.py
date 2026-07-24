@@ -871,31 +871,20 @@ class MarketAnalysis:
 
 
         result["higher_trend"] = mtf.get(
-
-            "1H",
-
+            "higher_trend",
             "unknown"
-
         )
-
 
 
         result["mid_trend"] = mtf.get(
-
-            "15M",
-
+            "mid_trend",
             "unknown"
-
         )
 
 
-
         result["lower_trend"] = mtf.get(
-
-            "5M",
-
+            "lower_trend",
             "unknown"
-
         )
 
 

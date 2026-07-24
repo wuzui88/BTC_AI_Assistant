@@ -875,10 +875,10 @@ class ScoringEngine:
         # ====================================================
 
 
-        if volume >= 2:
+        if volume >= 1.2:
 
 
-            score +=20
+            score +=15
 
 
             result["reason"].append(
@@ -889,10 +889,10 @@ class ScoringEngine:
 
 
 
-        elif volume >=1:
+        elif volume >=0.8:
 
 
-            score +=10
+            score +=5
 
 
             result["reason"].append(
@@ -903,7 +903,7 @@ class ScoringEngine:
 
 
 
-        elif volume >=0.25:
+        elif volume >=0.5:
 
 
             score -=5

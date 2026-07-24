@@ -450,15 +450,14 @@ class OKXFeed:
                     try:
 
 
-                        volume = (
-
+                        volume_btc = (
                             float(size)
-
                             *
-
                             self.contract_size
-
                         )
+
+
+                        volume = volume_btc
 
 
 
@@ -595,7 +594,7 @@ class OKXFeed:
 
 
 
-                "size":
+                "volume":
 
                 volume,
 

@@ -2,7 +2,9 @@ import requests
 import time
 
 
+
 class OKXHistory:
+
 
 
     def __init__(self):
@@ -18,6 +20,8 @@ class OKXHistory:
 
 
 
+
+
     def get_history(
         self,
         inst_id="BTC-USDT-SWAP",
@@ -30,20 +34,27 @@ class OKXHistory:
         params = {
 
 
-            "instId": inst_id,
+            "instId":
+
+                inst_id,
 
 
-            "bar": bar,
+            "bar":
+
+                bar,
 
 
-            "limit": limit
+            "limit":
 
+                limit
 
         }
 
 
 
+
         retry_times = 3
+
 
 
 
@@ -67,12 +78,9 @@ class OKXHistory:
 
                     timeout=30
 
-
                 )
 
 
-
-                # HTTP错误
 
                 r.raise_for_status()
 
@@ -99,7 +107,11 @@ class OKXHistory:
 
 
 
+
+
                 candles = []
+
+
 
 
 
@@ -113,7 +125,36 @@ class OKXHistory:
                     try:
 
 
+
+                        # =================================================
+                        #
+                        # OKX history-candles 返回:
+                        #
+                        # item[0]  时间
+                        # item[1]  开
+                        # item[2]  高
+                        # item[3]  低
+                        # item[4]  收
+                        # item[5]  vol       合约张数
+                        # item[6]  volCcy    BTC数量
+                        # item[7]  volCcyQuote USDT成交额
+                        #
+                        # 系统统一:
+                        #
+                        # volume = BTC数量
+                        #
+                        # =================================================
+
+
+
+                        volume = float(
+                            item[6]
+                        )
+
+
+
                         candles.append(
+
 
 
                             {
@@ -155,16 +196,51 @@ class OKXHistory:
 
                                 float(
                                     item[4]
-                                )
+                                ),
+
+                                # OKX SWAP统一使用BTC数量作为volume
+                                # item[6] = volCcy
+                                "volume":
+
+                                float(
+                                    item[6]
+                                ) if len(item) > 6 else 0.0,
+
+
+
+                                "volume":
+
+                                volume,
+
+
+
+                                "volume_unit":
+
+                                "BTC"
+
 
 
                             }
 
 
+
                         )
 
 
-                    except Exception:
+
+
+
+                    except Exception as e:
+
+
+
+                        print(
+
+                            "解析OKX历史K线失败:",
+
+                            e
+
+                        )
 
 
                         continue
@@ -174,7 +250,10 @@ class OKXHistory:
 
 
 
+
                 candles.reverse()
+
+
 
 
 
@@ -186,7 +265,26 @@ class OKXHistory:
 
 
 
+                if candles:
+
+
+                    print(
+
+                        "最新K线成交量:",
+
+                        candles[-1]["volume"],
+
+                        candles[-1]["volume_unit"]
+
+                    )
+
+
+
+
                 return candles
+
+
+
 
 
 
@@ -201,6 +299,7 @@ class OKXHistory:
 
                     f"OKX历史K线请求失败 "
                     f"({attempt+1}/{retry_times}):",
+
                     e
 
                 )
@@ -210,11 +309,17 @@ class OKXHistory:
                 if attempt < retry_times - 1:
 
 
+
                     wait = (
+
                         2
+
                         +
+
                         attempt * 3
+
                     )
+
 
 
                     print(
@@ -224,7 +329,11 @@ class OKXHistory:
                     )
 
 
+
                     time.sleep(wait)
+
+
+
 
 
 
@@ -239,3 +348,27 @@ class OKXHistory:
 
 
         return []
+
+    def get_multi_timeframe(
+        self,
+        inst_id="BTC-USDT-SWAP",
+        limit=200
+    ):
+
+        return {
+            "5M": self.get_history(
+                inst_id,
+                "5m",
+                300
+            ),
+            "15M": self.get_history(
+                inst_id,
+                "15m",
+                limit
+            ),
+            "1H": self.get_history(
+                inst_id,
+                "1H",
+                limit
+            )
+        }

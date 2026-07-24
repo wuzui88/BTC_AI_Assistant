@@ -12,16 +12,44 @@ class Candle:
         self.timestamp = timestamp
 
 
+        # ====================================================
         # OHLC
+        # ====================================================
+
+        price = float(price)
+
         self.open = price
         self.high = price
         self.low = price
         self.close = price
 
 
+
+        # ====================================================
         # 成交量
+        #
+        # V10.3.7
+        #
+        # 统一标准:
+        #
+        # volume = BTC数量
+        #
+        # 禁止:
+        # contract 张数
+        #
+        # ====================================================
+
+
         self.volume = float(volume)
 
+        self.volume_unit = "BTC"
+
+
+
+
+    # ====================================================
+    # 更新K线
+    # ====================================================
 
 
     def update(
@@ -32,28 +60,56 @@ class Candle:
 
 
         price = float(price)
+
         volume = float(volume)
 
 
+
+        # ====================================================
         # 更新收盘价
+        # ====================================================
+
         self.close = price
 
 
+
+        # ====================================================
         # 更新最高价
+        # ====================================================
+
         if price > self.high:
 
             self.high = price
 
 
+
+        # ====================================================
         # 更新最低价
+        # ====================================================
+
         if price < self.low:
 
             self.low = price
 
 
+
+        # ====================================================
         # 累计成交量
+        #
+        # 注意:
+        # 这里要求传入已经转换后的 BTC volume
+        #
+        # ====================================================
+
         self.volume += volume
 
+
+
+
+
+    # ====================================================
+    # 转换字典
+    # ====================================================
 
 
     def to_dict(self):
@@ -61,16 +117,41 @@ class Candle:
 
         return {
 
-            "time": self.timestamp,
 
-            "open": self.open,
+            "time":
 
-            "high": self.high,
+                self.timestamp,
 
-            "low": self.low,
 
-            "close": self.close,
+            "open":
 
-            "volume": self.volume
+                self.open,
+
+
+            "high":
+
+                self.high,
+
+
+            "low":
+
+                self.low,
+
+
+            "close":
+
+                self.close,
+
+
+            # 成交量(BTC)
+
+            "volume":
+
+                self.volume,
+
+
+            "volume_unit":
+
+                self.volume_unit
 
         }

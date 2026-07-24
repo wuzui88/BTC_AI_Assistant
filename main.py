@@ -14,7 +14,7 @@ from trade.paper_trader import PaperTrader
 from data_feed.okx_history import OKXHistory
 from database.position_db import PositionDB
 import threading
-
+from kline.mtf_builder import MTFBuilder
 
 db = SQLiteDB()
 trade_db = TradeDB()
@@ -23,12 +23,10 @@ position_db = PositionDB()
 kline_cache = KlineCache(max_size=500)
 candle_builder = CandleBuilder()
 
-
 indicator = TechnicalIndicator()
 market_analysis = MarketAnalysis()
 strategy = BTCStrategy()
-
-
+mtf_builder = MTFBuilder()
 risk_manager = RiskManager(
     balance=20000,
     risk_percent=1,
@@ -39,6 +37,27 @@ risk_manager = RiskManager(
 position_manager = PositionManager()
 paper_trader = PaperTrader(position_db)
 history_api = OKXHistory()
+
+# 初始化15M/1H历史多周期数据
+try:
+
+    mtf_history = history_api.get_multi_timeframe(
+        "BTC-USDT-SWAP",
+        200
+    )
+
+    mtf_builder.load_history(
+        mtf_history
+    )
+
+    print("MTF历史初始化完成:", {
+        "15M": len(mtf_history.get("15M", [])),
+        "1H": len(mtf_history.get("1H", []))
+    })
+
+except Exception as e:
+
+    print("MTF历史初始化失败:", e)
 
 
 current_price = 0
@@ -326,7 +345,7 @@ def receive(data):
         data["time"],
 
         data.get(
-            "size",
+            "volume",
             0
         )
 
@@ -352,7 +371,9 @@ def receive(data):
 
         db.save_kline(candle)
 
-
+        timeframe_data = mtf_builder.update(
+            candle
+        )
 
         candles = kline_cache.data
 
@@ -382,13 +403,22 @@ def receive(data):
             indicators
         )
 
-
+        print(
+            "MTF输入:",
+            {
+                "5M": len(timeframe_data.get("5M", [])),
+                "15M": len(timeframe_data.get("15M", [])),
+                "1H": len(timeframe_data.get("1H", []))
+            }
+        )
 
         market = market_analysis.analyze(
 
             candles,
 
-            indicators
+            indicators,
+
+            timeframe_data
 
         )
         print("===================")

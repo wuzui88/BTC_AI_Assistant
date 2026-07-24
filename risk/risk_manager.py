@@ -26,6 +26,19 @@ class RiskManager:
 
 
 
+    def adjust_risk_by_market(self, market):
+        """根据行情强弱动态调整风险比例"""
+        if not market:
+            return self.risk_percent
+        trend = market.get("trend", "")
+        confidence = market.get("confidence", 0)
+        if confidence < 50:
+            return min(self.risk_percent, 0.5)
+        if "rebound" in trend:
+            return min(self.risk_percent, 0.75)
+        return self.risk_percent
+
+
     def calculate(
         self,
         entry,

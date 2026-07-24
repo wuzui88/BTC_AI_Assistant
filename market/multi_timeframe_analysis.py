@@ -112,58 +112,114 @@ class MultiTimeframeAnalyzer:
 
 
 
-        h1 = self.analyze_timeframe(
-
-            timeframe_data.get(
-
-                "1H",
-
-                {}
-
-            )
-
+        h1_data = timeframe_data.get(
+            "1H",
+            []
         )
 
+        m15_data = timeframe_data.get(
+            "15M",
+            []
+        )
+
+        m5_data = timeframe_data.get(
+            "5M",
+            []
+        )
+
+
+        h1 = self.analyze_timeframe(
+            h1_data
+        ) if len(h1_data) >= 20 else {
+            "trend":"neutral",
+            "score":0,
+            "reason":["1H数据不足"],
+            "warning":["1H周期不足"]
+        }
 
 
         m15 = self.analyze_timeframe(
-
-            timeframe_data.get(
-
-                "15M",
-
-                {}
-
-            )
-
-        )
-
+            m15_data
+        ) if len(m15_data) >= 20 else {
+            "trend":"neutral",
+            "score":0,
+            "reason":["15M数据不足"],
+            "warning":["15M周期不足"]
+        }
 
 
         m5 = self.analyze_timeframe(
-
-            timeframe_data.get(
-
-                "5M",
-
-                {}
-
-            )
-
-        )
+            m5_data
+        ) if len(m5_data) >= 20 else {
+            "trend":"neutral",
+            "score":0,
+            "reason":["5M数据不足"],
+            "warning":["5M周期不足"]
+        }
 
 
 
 
-        return self.combine(
-
+        result = self.combine(
             h1,
-
             m15,
-
             m5
-
         )
+
+
+        result["higher_trend"] = h1.get(
+            "trend",
+            "unknown"
+        )
+
+        result["mid_trend"] = m15.get(
+            "trend",
+            "unknown"
+        )
+
+        result["lower_trend"] = m5.get(
+            "trend",
+            "unknown"
+        )
+
+
+        result["mtf_score"] = (
+            h1.get("score",0)
+            +
+            m15.get("score",0)
+            +
+            m5.get("score",0)
+        )
+
+
+        return result
+
+        result["higher_trend"] = h1.get(
+            "trend",
+            "unknown"
+        )
+
+        result["mid_trend"] = m15.get(
+            "trend",
+            "unknown"
+        )
+
+        result["lower_trend"] = m5.get(
+            "trend",
+            "unknown"
+        )
+
+
+        result["mtf_score"] = (
+            h1.get("score",0)
+            +
+            m15.get("score",0)
+            +
+            m5.get("score",0)
+        )
+
+
+        return result
 
 
 
@@ -180,6 +236,72 @@ class MultiTimeframeAnalyzer:
         self,
         data
     ):
+
+
+        # V10.3 FIX:
+        # MTFBuilder传入的是K线列表，不是指标字典。
+        # 原逻辑直接data.get("EMA20")会得到默认0，
+        # 导致1H/15M/5M全部unknown。
+        if isinstance(data, list):
+
+            if len(data) < 20:
+                return {
+                    "trend": "unknown",
+                    "score": 0,
+                    "reason": ["周期K线不足"]
+                }
+
+            closes = [
+                float(x.get("close", 0))
+                for x in data
+            ]
+
+            def ema(values, period):
+                if len(values) < period:
+                    return values[-1]
+
+                k = 2 / (period + 1)
+                value = sum(values[:period]) / period
+
+                for price in values[period:]:
+                    value = price * k + value * (1-k)
+
+                return value
+
+
+            ema20 = ema(closes, 20)
+            ema50 = ema(closes, 50)
+
+            macd = ema(closes, 12) - ema(closes, 26)
+
+            # 简化RSI计算
+            gains = []
+            losses = []
+
+            for i in range(1, len(closes)):
+                diff = closes[i] - closes[i-1]
+                if diff >= 0:
+                    gains.append(diff)
+                    losses.append(0)
+                else:
+                    gains.append(0)
+                    losses.append(abs(diff))
+
+            avg_gain = sum(gains[-14:]) / 14
+            avg_loss = sum(losses[-14:]) / 14
+
+            if avg_loss == 0:
+                rsi = 100
+            else:
+                rs = avg_gain / avg_loss
+                rsi = 100 - (100 / (1 + rs))
+
+            data = {
+                "EMA20": ema20,
+                "EMA50": ema50,
+                "MACD": macd,
+                "RSI": rsi
+            }
 
 
         score = 0
@@ -361,6 +483,23 @@ class MultiTimeframeAnalyzer:
     # ========================================================
     # 多周期融合
     # ========================================================
+
+
+    def get_alignment(self, h1, m15, m5):
+
+        trends = [
+            h1.get("trend"),
+            m15.get("trend"),
+            m5.get("trend")
+        ]
+
+        if all(t == "bullish" for t in trends):
+            return "BULLISH"
+
+        if all(t == "bearish" for t in trends):
+            return "BEARISH"
+
+        return "MIXED"
 
 
     def combine(
@@ -757,6 +896,20 @@ class MultiTimeframeAnalyzer:
 
                 warnings,
 
+            "higher_trend":
+                h1.get("trend", "neutral"),
+
+            "mid_trend":
+                m15.get("trend", "neutral"),
+
+            "lower_trend":
+                m5.get("trend", "neutral"),
+
+            "mtf_score":
+                score,
+
+            "mtf_alignment":
+                self.get_alignment(h1, m15, m5),
 
             "timeframes":
 

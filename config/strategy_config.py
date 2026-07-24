@@ -13,12 +13,12 @@ STRATEGY_CONFIG = {
     # 信号评分
     # =========================
 
-    "LONG_SCORE_THRESHOLD": 75,
+    "LONG_SCORE_THRESHOLD": 60,
 
-    "SHORT_SCORE_THRESHOLD": 75,
+    "SHORT_SCORE_THRESHOLD": 60,
 
 
-    "WAIT_SCORE_THRESHOLD": 55,
+    "WAIT_SCORE_THRESHOLD": 45,
 
 
 
@@ -30,15 +30,15 @@ STRATEGY_CONFIG = {
      # 成交量过滤
     "LOW_VOLUME_BLOCK": 0.25,
      # 最低信心
-    "MIN_CONFIDENCE": 50,
+    "MIN_CONFIDENCE": 45,
 
     # =========================
     # ATR风险
     # =========================
     # ATR止损
-    "STOP_ATR_MULTIPLE": 1.6,
+    "STOP_ATR_MULTIPLE": 1.8,
     # ATR止盈
-    "TAKE_PROFIT_ATR_MULTIPLE": 2.8,
+    "TAKE_PROFIT_ATR_MULTIPLE": 4.0,
 
 
 
@@ -58,9 +58,9 @@ STRATEGY_CONFIG = {
     # RSI过滤
     # =========================
 
-    "RSI_OVERBUY": 75,
+    "RSI_OVERBUY": 85,
 
-    "RSI_OVERSOLD": 30,
+    "RSI_OVERSOLD": 15,
 
 
 

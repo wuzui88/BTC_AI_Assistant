@@ -90,6 +90,15 @@ class TechnicalIndicator:
 
                 )
 
+                volume = abs(
+                    float(
+                        c.get(
+                            "volume",
+                            0
+                        )
+                    )
+                )
+
 
 
             except:

@@ -35,7 +35,7 @@ class BTCStrategy:
     ):
 
 
-        self.name = "BTCStrategy_V10.2.2"
+        self.name = "BTCStrategy_V10.4.1_Optimized"
 
 
 
@@ -306,6 +306,16 @@ class BTCStrategy:
         )
 
 
+        # V10.4.1 MTF冲突保护
+        mtf_alignment = market.get("mtf_alignment", "")
+        higher_trend = market.get("higher_trend", "")
+        mid_trend = market.get("mid_trend", "")
+        lower_trend = market.get("lower_trend", "")
+
+        # V10.4.1 MTF信息仅用于最终入场过滤
+        # 不在此处引用direction，避免信号尚未生成导致NameError
+
+
 
         price = indicators.get(
 
@@ -392,7 +402,7 @@ class BTCStrategy:
 
                 "ENTRY_SCORE",
 
-                70
+                60
 
             ):
 
@@ -523,7 +533,7 @@ class BTCStrategy:
 
                 "ENTRY_SCORE",
 
-                70
+                60
 
             ):
 
@@ -982,7 +992,7 @@ class BTCStrategy:
 
             "MIN_VOLUME_RATIO_BLOCK",
 
-            0.25
+            0.20
 
         ):
 
@@ -1151,7 +1161,7 @@ class BTCStrategy:
 
             "MIN_VOLUME_RATIO_BLOCK",
 
-            0.25
+            0.20
 
         ):
 
@@ -1189,7 +1199,7 @@ class BTCStrategy:
 
                 "RSI_OVERSOLD",
 
-                30
+                15
 
             ):
 
@@ -1317,7 +1327,7 @@ class BTCStrategy:
 
                 "RSI_OVERBUY",
 
-                75
+                85
 
             ):
 
